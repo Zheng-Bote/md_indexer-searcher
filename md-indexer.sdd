@@ -1,0 +1,25 @@
+# SpecDD: Markdown Knowledge Indexer (md-indexer)
+
+## 1. System Intent
+The `md-indexer` system acts as a local knowledge graph and search engine for Markdown-based note systems (like Obsidian).
+It maintains a strict one-way flow of information: Markdown files are the single Source of Truth. The SQLite database is a disposable, materialized index.
+
+## 2. Architecture & Layering
+*   **FS Layer (Watcher):** Monitors the filesystem for changes. Never writes to markdown files.
+*   **Parser & Extractor Layer:** Parses Markdown to AST (`goldmark`), extracts Frontmatter, Links, Tags.
+*   **Repository Layer:** Manages the SQLite database and FTS5 search index.
+*   **Search / Graph Engine Layer:** Provides complex query capabilities (BFS, graph traversal) exclusively via the SQLite database.
+*   **API / CLI Layer:** Provides interfaces to the system (`md-search` and `md-api`).
+
+## 3. Strict Rules (Must / Must Not / Forbids)
+*   **MUST** treat markdown files as immutable (Read-Only). No bidirectional sync.
+*   **MUST** use Clean Architecture and Dependency Injection.
+*   **MUST NOT** use CGO dependencies (e.g., `modernc.org/sqlite` must be used).
+*   **MUST NOT** bypass the Search/Graph Engine layer to access the database directly from API handlers.
+*   **FORBIDS** the use of global variables for state management.
+*   **FORBIDS** writing any code that violates the standard Go project layout (`cmd/`, `internal/`).
+
+## 4. Code Standards
+*   **Language:** All code documentation and comments must be in English.
+*   **Licensing:** All source code files must include an SPDX header (Apache-2.0).
+*   **Modularity:** `md-indexer`, `md-search`, and `md-api` are distinct binaries but share the `internal` core.

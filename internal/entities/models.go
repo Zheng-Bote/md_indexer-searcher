@@ -2,16 +2,22 @@ package entities
 import "time"
 
 type Document struct {
-	ID         string
-	Path       string
-	Title      string
-	Hash       string
-	ModifiedAt time.Time
-	IndexedAt  time.Time
-	Sections   []Section
-	Links      []Link
-	Tags       []string
-	Metadata   map[string]interface{}
+	ID               string
+	Path             string
+	Title            string
+	Content          string
+	Hash             string
+	ModifiedAt       time.Time
+	IndexedAt        time.Time
+	Sections         []Section
+	Links            []Link
+	Tags             []string
+	Metadata         map[string]interface{}
+	IsEntity         bool
+	EntityType       string
+	EntityName       string
+	EntityProperties map[string]string
+	EntityRelations  []EntityRelation
 }
 type Section struct {
 	ID         string

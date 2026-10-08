@@ -57,13 +57,46 @@ func (r *SQLiteRepository) UpsertDocument(ctx context.Context, doc *entities.Doc
 	if err != nil { return err }
 	defer tx.Rollback()
 
+	// 1. Wipe Document data
 	tx.ExecContext(ctx, "DELETE FROM documents WHERE path = ?", doc.Path)
 	tx.ExecContext(ctx, "DELETE FROM sections WHERE document_id = ?", doc.ID)
 	tx.ExecContext(ctx, "DELETE FROM links WHERE source_document_id = ?", doc.ID)
 	tx.ExecContext(ctx, "DELETE FROM fts_documents WHERE id = ?", doc.ID)
 
+	// 2. Wipe Entity data (linked by name/ID for this document)
+	// We use doc.EntityName as the Entity ID for simplicity in linking.
+	entID := doc.EntityName
+	if entID == "" { entID = doc.Title }
+	
+	tx.ExecContext(ctx, "DELETE FROM entities WHERE id = ?", entID)
+	tx.ExecContext(ctx, "DELETE FROM entity_properties WHERE entity_id = ?", entID)
+	tx.ExecContext(ctx, "DELETE FROM entity_relations WHERE source_entity_id = ?", entID)
+
+	// 3. Insert Document data
 	tx.ExecContext(ctx, "INSERT INTO documents (id, path, title, hash, modified_at, indexed_at) VALUES (?, ?, ?, ?, ?, ?)", doc.ID, doc.Path, doc.Title, doc.Hash, doc.ModifiedAt, doc.IndexedAt)
-	tx.ExecContext(ctx, "INSERT INTO fts_documents (id, title, content, tags) VALUES (?, ?, ?, ?)", doc.ID, doc.Title, "", strings.Join(doc.Tags, " "))
+	tx.ExecContext(ctx, "INSERT INTO fts_documents (id, title, content, tags) VALUES (?, ?, ?, ?)", doc.ID, doc.Title, doc.Content, strings.Join(doc.Tags, " "))
+
+	for _, link := range doc.Links {
+		tx.ExecContext(ctx, "INSERT INTO links (source_document_id, target_document_id) VALUES (?, ?)", link.SourceDocID, link.TargetDocID)
+	}
+
+	for _, sec := range doc.Sections {
+		tx.ExecContext(ctx, "INSERT INTO sections (id, document_id, heading, level, content) VALUES (?, ?, ?, ?, ?)", sec.ID, doc.ID, sec.Heading, sec.Level, sec.Content)
+	}
+
+	// 4. Insert Entity data if IsEntity
+	if doc.IsEntity {
+		tx.ExecContext(ctx, "INSERT OR IGNORE INTO entity_types (id, name) VALUES (?, ?)", doc.EntityType, doc.EntityType)
+		tx.ExecContext(ctx, "INSERT INTO entities (id, type_id, name) VALUES (?, ?, ?)", entID, doc.EntityType, doc.EntityName)
+		
+		for k, v := range doc.EntityProperties {
+			tx.ExecContext(ctx, "INSERT INTO entity_properties (entity_id, property_key, property_value) VALUES (?, ?, ?)", entID, k, v)
+		}
+		
+		for _, rel := range doc.EntityRelations {
+			tx.ExecContext(ctx, "INSERT INTO entity_relations (source_entity_id, target_entity_id, relation_type) VALUES (?, ?, ?)", rel.SourceID, rel.TargetID, rel.Type)
+		}
+	}
 
 	return tx.Commit()
 }

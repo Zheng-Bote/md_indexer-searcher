@@ -3,6 +3,7 @@ package search
 import (
 	"context"
 	"github.com/md-indexer/internal/entities"
+	"github.com/md-indexer/internal/graph"
 	"github.com/md-indexer/internal/repository"
 )
 
@@ -10,8 +11,8 @@ type SearchEngine interface {
 	Search(ctx context.Context, query string) ([]entities.SearchResult, error)
 	Backlinks(ctx context.Context, name string) ([]string, error)
 	Relations(ctx context.Context, name string) ([]entities.EntityRelation, error)
-	Impact(ctx context.Context, name string) ([]string, error)
-	Graph(ctx context.Context, name string) (interface{}, error)
+	Impact(ctx context.Context, name string) ([]entities.GraphEdge, error)
+	Graph(ctx context.Context, name string) ([]entities.GraphEdge, error)
 	FindEntity(ctx context.Context, name string) (*entities.Entity, error)
 	FindDocument(ctx context.Context, name string) (*entities.Document, error)
 }
@@ -19,12 +20,14 @@ type SearchEngine interface {
 type engineImpl struct {
 	sRepo *repository.SearchRepository
 	qRepo *repository.SQLiteRepository
+	graph graph.GraphEngine
 }
 
 func NewSearchEngine(qRepo *repository.SQLiteRepository) SearchEngine {
 	return &engineImpl{
 		qRepo: qRepo,
 		sRepo: repository.NewSearchRepository(qRepo),
+		graph: graph.NewGraphEngine(qRepo),
 	}
 }
 
@@ -47,13 +50,23 @@ func (e *engineImpl) Backlinks(ctx context.Context, name string) ([]string, erro
 }
 
 func (e *engineImpl) Relations(ctx context.Context, name string) ([]entities.EntityRelation, error) {
-	return []entities.EntityRelation{}, nil
+	ent, err := e.FindEntity(ctx, name)
+	if err != nil || ent == nil { return nil, err }
+	
+	// Return direct outgoing relations
+	return e.graph.DirectRelations(ctx, ent.ID)
 }
 
-func (e *engineImpl) Impact(ctx context.Context, name string) ([]string, error) {
-	return []string{}, nil
+func (e *engineImpl) Impact(ctx context.Context, name string) ([]entities.GraphEdge, error) {
+	ent, err := e.FindEntity(ctx, name)
+	if err != nil || ent == nil { return nil, err }
+	
+	return e.graph.ImpactAnalysis(ctx, ent.ID)
 }
 
-func (e *engineImpl) Graph(ctx context.Context, name string) (interface{}, error) {
-	return nil, nil
+func (e *engineImpl) Graph(ctx context.Context, name string) ([]entities.GraphEdge, error) {
+	ent, err := e.FindEntity(ctx, name)
+	if err != nil || ent == nil { return nil, err }
+	
+	return e.graph.DependencyTree(ctx, ent.ID)
 }

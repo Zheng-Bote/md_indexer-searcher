@@ -37,10 +37,10 @@ func main() {
 				enc.SetIndent("", "  ")
 				enc.Encode(res)
 			} else {
-				fmt.Println("Result	Score	Title")
+				fmt.Println("Result\tScore\tTitle")
 				fmt.Println("--------------------------------")
 				for i, r := range res {
-					fmt.Printf("%d	%.2f	%s\n", i+1, r.Rank, r.Title)
+					fmt.Printf("%d\t%.2f\t%s\n", i+1, r.Rank, r.Title)
 				}
 			}
 		},
@@ -62,7 +62,51 @@ func main() {
 		},
 	}
 
-	rootCmd.AddCommand(searchCmd, documentCmd)
+	impactCmd := &cobra.Command{
+		Use:   "impact [entity]",
+		Short: "Impact analysis for an entity",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			repo, _ := repository.NewSQLiteRepository(dbPath)
+			se := search.NewSearchEngine(repo)
+			res, _ := se.Impact(context.Background(), args[0])
+			
+			if jsonOutput {
+				enc := json.NewEncoder(os.Stdout)
+				enc.SetIndent("", "  ")
+				enc.Encode(res)
+			} else {
+				fmt.Println("Source\tTarget\tRelation")
+				for _, r := range res {
+					fmt.Printf("%s\t%s\t%s\n", r.Source, r.Target, r.Relation)
+				}
+			}
+		},
+	}
+
+	graphCmd := &cobra.Command{
+		Use:   "graph [entity]",
+		Short: "Dependency tree for an entity",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			repo, _ := repository.NewSQLiteRepository(dbPath)
+			se := search.NewSearchEngine(repo)
+			res, _ := se.Graph(context.Background(), args[0])
+			
+			if jsonOutput {
+				enc := json.NewEncoder(os.Stdout)
+				enc.SetIndent("", "  ")
+				enc.Encode(res)
+			} else {
+				fmt.Println("Source\tTarget\tRelation")
+				for _, r := range res {
+					fmt.Printf("%s\t%s\t%s\n", r.Source, r.Target, r.Relation)
+				}
+			}
+		},
+	}
+
+	rootCmd.AddCommand(searchCmd, documentCmd, impactCmd, graphCmd)
 	
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)

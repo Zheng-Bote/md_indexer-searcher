@@ -63,5 +63,17 @@ func (s *Server) Handler() http.Handler {
 		respondJSON(w, res, err)
 	})
 
+	r.Get("/api/impact/{name}", func(w http.ResponseWriter, r *http.Request) {
+		name := chi.URLParam(r, "name")
+		res, err := s.searchEngine.Impact(r.Context(), name)
+		respondJSON(w, res, err)
+	})
+
+	r.Get("/api/graph/{name}", func(w http.ResponseWriter, r *http.Request) {
+		name := chi.URLParam(r, "name")
+		res, err := s.searchEngine.Graph(r.Context(), name)
+		respondJSON(w, res, err)
+	})
+
 	return r
 }
