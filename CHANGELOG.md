@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Local Grounded AI Assistant & RAG Layer (`cmd/md-ai`):**
+  - Added new standalone binary `cmd/md-ai` providing grounded question answering over Markdown notes indexed in SQLite `knowledge.db`.
+  - Added native Ollama LLM provider (`internal/ai/provider`) defaulting to `gemma3:1b` with configurable temperature, token limits, and deterministic mock providers for testing.
+  - Implemented Intent Classifier (`internal/ai/classifier`) supporting `Search`, `Entity`, `Relationship`, `ADR`, `Impact`, `Summary`, `Compare`, and `KnowledgeGap`.
+  - Implemented multi-strategy Knowledge Retriever (`internal/ai/retriever`) combining FTS5 BM25 search, entity lookups, entity relations, and recursive SQLite BFS graph neighborhood queries (`graph_depth: 3`).
+  - Added Context Builder (`internal/ai/contextbuilder`) enforcing strict token budgeting (default 16,000 tokens) with priority ordering (Entity > Doc > ADR > Graph > FTS).
+  - Enforced strict anti-hallucination prompt templates (`internal/ai/prompt`), inline citation extraction (`internal/ai/citations`), and knowledge gap detection (`internal/ai/gaps`).
+  - Added interactive multi-turn chat REPL session manager (`internal/ai/conversation`).
+  - Provided comprehensive in-memory test coverage (>81%–100%) across all `internal/ai/...` subpackages while leaving existing components (`cmd/md-indexer`, `cmd/md-search`, `cmd/md-api`) untouched.
+
 - **Comprehensive Test Suite & In-Memory SQLite Coverage >80% (#3):**
   - Established in-memory SQLite (`:memory:`) test architecture for repository, search repo, graph engine, and search engine facade.
   - Added recursive CTE graph traversal tests covering `DependencyTree`, `ImpactAnalysis`, and `ShortestPath` (BFS).
