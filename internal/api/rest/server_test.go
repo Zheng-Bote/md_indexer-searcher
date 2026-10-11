@@ -7,9 +7,16 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/md-indexer/internal/ai/assistant"
+	"github.com/md-indexer/internal/ai/classifier"
+	"github.com/md-indexer/internal/ai/config"
+	"github.com/md-indexer/internal/ai/contextbuilder"
+	"github.com/md-indexer/internal/ai/provider"
+	"github.com/md-indexer/internal/ai/retriever"
 	"github.com/md-indexer/internal/entities"
 	"github.com/md-indexer/internal/repository"
 	"github.com/md-indexer/internal/search"
@@ -149,5 +156,40 @@ func TestRESTServer_AllEndpoints(t *testing.T) {
 				t.Errorf("Expected response key '%s', got %+v", tc.wantKey, bodyMap)
 			}
 		})
+	}
+
+	// Test /api/ai/ask without assistant (501 Not Implemented)
+	reqAI := httptest.NewRequest("POST", "/api/ai/ask", strings.NewReader(`{"question":"test"}`))
+	wAI := httptest.NewRecorder()
+	handler.ServeHTTP(wAI, reqAI)
+	if wAI.Code != http.StatusNotImplemented {
+		t.Errorf("expected 501 when AI assistant not configured, got %d", wAI.Code)
+	}
+
+	// Test /api/ai/ask with configured mock assistant
+	cfg := config.DefaultConfig()
+	clf := classifier.NewRuleClassifier()
+	ret := retriever.NewRetriever(repo.GetDB(), 3)
+	cb := contextbuilder.NewContextBuilder(1000)
+	mockLLM := provider.NewMockProvider("Grounded REST answer")
+	asst := assistant.NewAssistant(cfg, clf, ret, cb, mockLLM)
+
+	serverWithAI := NewServer(search.NewSearchEngine(repo)).WithAssistant(asst)
+	handlerWithAI := serverWithAI.Handler()
+
+	// Invalid payload (400 Bad Request)
+	reqBad := httptest.NewRequest("POST", "/api/ai/ask", strings.NewReader(`{}`))
+	wBad := httptest.NewRecorder()
+	handlerWithAI.ServeHTTP(wBad, reqBad)
+	if wBad.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for empty question, got %d", wBad.Code)
+	}
+
+	// Valid payload (200 OK)
+	reqGood := httptest.NewRequest("POST", "/api/ai/ask", strings.NewReader(`{"question":"What is PaymentService?"}`))
+	wGood := httptest.NewRecorder()
+	handlerWithAI.ServeHTTP(wGood, reqGood)
+	if wGood.Code != http.StatusOK {
+		t.Errorf("expected 200 for valid question, got %d: %s", wGood.Code, wGood.Body.String())
 	}
 }

@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added Context Builder (`internal/ai/contextbuilder`) enforcing strict token budgeting (default 16,000 tokens) with priority ordering (Entity > Doc > ADR > Graph > FTS).
   - Enforced strict anti-hallucination prompt templates (`internal/ai/prompt`), inline citation extraction (`internal/ai/citations`), and knowledge gap detection (`internal/ai/gaps`).
   - Added interactive multi-turn chat REPL session manager (`internal/ai/conversation`).
+  - Integrated optional AI Q&A endpoint into `md-api` (`POST /api/ai/ask`) enabled via `-ai` flag or `MD_API_ENABLE_AI=true`.
   - Provided comprehensive in-memory test coverage (>81%–100%) across all `internal/ai/...` subpackages while leaving existing components (`cmd/md-indexer`, `cmd/md-search`, `cmd/md-api`) untouched.
 
 - **Comprehensive Test Suite & In-Memory SQLite Coverage >80% (#3):**

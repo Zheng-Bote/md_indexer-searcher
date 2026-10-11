@@ -1,22 +1,234 @@
-openapi: 3.0.0
+openapi: 3.0.3
 info:
-  title: MD Indexer API
-  version: 1.0.0
+  title: MD Indexer & Knowledge Graph API
+  version: 1.1.0
+  description: >
+    REST API for the Markdown Knowledge Indexer, Search Engine, Graph Traversal,
+    and Grounded Local AI Assistant (md-ai / RAG).
 paths:
   /health:
     get:
       summary: Health Check
+      description: Returns service health status.
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
   /api/search:
     get:
-      summary: Full-text Search
+      summary: Full-Text Search
+      description: Search documents and sections via SQLite FTS5 BM25 ranking.
       parameters:
         - in: query
           name: q
+          required: true
+          schema:
+            type: string
+          description: Search query or terms.
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /api/documents/{name}:
+    get:
+      summary: Get Document by Name
+      description: Retrieve document metadata and content.
+      parameters:
+        - in: path
+          name: name
+          required: true
           schema:
             type: string
       responses:
         '200':
-          description: Search Results
+          description: Document details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /api/entities/{name}:
+    get:
+      summary: Get Entity by Name
+      description: Retrieve extracted entity details, properties, and relations.
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Entity details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /api/backlinks/{name}:
+    get:
+      summary: Get Document Backlinks
+      description: Retrieve incoming references/links to the specified document or entity.
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of backlinks
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /api/impact/{name}:
+    get:
+      summary: Impact Analysis (Reverse Dependencies)
+      description: >
+        Traverses reverse dependencies using SQLite recursive CTEs to identify
+        all entities and documents affected by modifying this entity.
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Affected downstream components
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /api/graph/{name}:
+    get:
+      summary: Dependency Tree (Forward Dependencies)
+      description: >
+        Traverses forward dependencies using SQLite recursive CTEs to build the
+        complete outbound dependency tree for this entity.
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Dependency tree nodes and edges
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+
+  /api/ai/ask:
+    post:
+      summary: Grounded AI Question Answering (RAG)
+      description: >
+        Asks a question to the local grounded AI assistant (powered by Ollama e.g. gemma3:1b).
+        Retrieves context via FTS5, entities, and recursive BFS graph neighbors with anti-hallucination guarantees.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - question
+              properties:
+                question:
+                  type: string
+                  example: "What does AuthService depend on and what are the security decisions?"
+      responses:
+        '200':
+          description: Grounded answer with citations and detected knowledge gaps
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AIAnswerResponse'
+        '400':
+          description: Invalid request payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '501':
+          description: AI assistant not configured (run md-api with -ai flag)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    APIResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+        error:
+          type: string
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+          example: "invalid question payload"
+
+    AIAnswerResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            question:
+              type: string
+            answer:
+              type: string
+            intent:
+              type: string
+              example: "adr"
+            model:
+              type: string
+              example: "gemma3:1b"
+            sources:
+              type: array
+              items:
+                type: object
+                properties:
+                  path:
+                    type: string
+                    example: "examples/vault/AuthService.md"
+                  section:
+                    type: string
+                    example: "Architecture"
+                  snippet:
+                    type: string
+            gaps:
+              type: array
+              items:
+                type: string

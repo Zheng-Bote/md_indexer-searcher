@@ -8,15 +8,23 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/md-indexer/internal/ai/assistant"
 	"github.com/md-indexer/internal/search"
 )
 
 type Server struct {
 	searchEngine search.SearchEngine
+	assistant    *assistant.Assistant
 }
 
 func NewServer(se search.SearchEngine) *Server {
 	return &Server{searchEngine: se}
+}
+
+// WithAssistant attaches an AI assistant orchestrator to the REST server.
+func (s *Server) WithAssistant(a *assistant.Assistant) *Server {
+	s.assistant = a
+	return s
 }
 
 func respondJSON(w http.ResponseWriter, data interface{}, err error) {
@@ -75,6 +83,22 @@ func (s *Server) Handler() http.Handler {
 		name := chi.URLParam(r, "name")
 		res, err := s.searchEngine.Graph(r.Context(), name)
 		respondJSON(w, res, err)
+	})
+
+	r.Post("/api/ai/ask", func(w http.ResponseWriter, r *http.Request) {
+		if s.assistant == nil {
+			http.Error(w, `{"success":false,"error":"AI assistant not configured"}`, http.StatusNotImplemented)
+			return
+		}
+		var req struct {
+			Question string `json:"question"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Question == "" {
+			http.Error(w, `{"success":false,"error":"invalid question payload"}`, http.StatusBadRequest)
+			return
+		}
+		ans, err := s.assistant.Ask(r.Context(), req.Question, nil)
+		respondJSON(w, ans, err)
 	})
 
 	return r
