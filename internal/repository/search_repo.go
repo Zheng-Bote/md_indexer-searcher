@@ -60,7 +60,7 @@ func (r *SearchRepository) GetBacklinks(ctx context.Context, targetDocID string)
 		SELECT d.title 
 		FROM links l 
 		JOIN documents d ON l.source_document_id = d.id 
-		WHERE l.target_document_id = ?`, targetDocID)
+		WHERE l.target_document_id = ? OR l.target_document_id = (SELECT title FROM documents WHERE id = ?)`, targetDocID, targetDocID)
 	if err != nil { return nil, err }
 	defer rows.Close()
 	

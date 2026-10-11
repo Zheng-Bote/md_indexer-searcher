@@ -181,3 +181,66 @@ make api-run
 - `GET /api/graph/{name}`: Recursive dependency tree for an entity
 
 *(The exact specification is documented in the included `openapi.yaml` file).*
+
+## Example Use Case & Walkthrough
+
+The repository includes a concrete, physically existing sample vault in [`examples/vault/`](examples/vault/) featuring Frontmatter entities, relationships, inline Wikilinks, hashtags, and code blocks:
+
+* [`examples/vault/AuthService.md`](examples/vault/AuthService.md): Service entity declaring relations (`uses: [UserDatabase, TokenSigner]`) and inline Wikilinks.
+* [`examples/vault/UserDatabase.md`](examples/vault/UserDatabase.md): Relational database entity referenced by `AuthService`.
+* [`examples/vault/TokenSigner.md`](examples/vault/TokenSigner.md): Cryptographic security module implementing `Ed25519` tokens.
+
+### 1. Build All Binaries
+```bash
+make build search api
+```
+
+### 2. Index the Sample Vault
+```bash
+./bin/md-indexer -dir ./examples/vault -db knowledge.db
+```
+
+### 3. Query via CLI Explorer (`md-search`)
+
+**Full-Text Search (FTS5 BM25):**
+```bash
+./bin/md-search search "Ed25519" -db knowledge.db
+```
+*Output: Matches `TokenSigner` based on BM25 full-text ranking.*
+
+**Impact Analysis (Reverse Dependency Traversal via Recursive CTE):**
+```bash
+./bin/md-search impact "UserDatabase" -db knowledge.db
+```
+*Output: Demonstrates that changing `UserDatabase` directly impacts `AuthService`.*
+
+**Dependency Tree (Forward Traversal via Recursive CTE):**
+```bash
+./bin/md-search graph "AuthService" -db knowledge.db
+```
+*Output: Discovers that `AuthService` depends on `UserDatabase` and `TokenSigner`.*
+
+### 4. Query via REST API (`md-api`)
+
+Start the API server:
+```bash
+./bin/md-api -db knowledge.db -port 8081
+```
+
+Query the HTTP endpoints:
+```bash
+# Retrieve extracted entity details & properties
+curl http://localhost:8081/api/entities/AuthService
+
+# Retrieve impact analysis
+curl http://localhost:8081/api/impact/UserDatabase
+
+# Retrieve backlinks (notes linking to TokenSigner)
+curl http://localhost:8081/api/backlinks/TokenSigner
+```
+
+### 5. Automated Verification
+This end-to-end physical use-case is continuously verified by an automated integration test:
+```bash
+go test -v ./examples
+```
