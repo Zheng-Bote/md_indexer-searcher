@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Comprehensive Test Suite & In-Memory SQLite Coverage >80% (#3):**
+  - Established in-memory SQLite (`:memory:`) test architecture for repository, search repo, graph engine, and search engine facade.
+  - Added recursive CTE graph traversal tests covering `DependencyTree`, `ImpactAnalysis`, and `ShortestPath` (BFS).
+  - Added HTTP API integration tests using `net/http/httptest` covering all REST routes (`/health`, `/api/search`, `/api/documents`, `/api/entities`, `/api/backlinks`, `/api/impact`, `/api/graph`).
+  - Added unit tests for `IndexerService` (crawl, hash comparison, update, removal) and `Watcher` lifecycle.
+  - Exceeded 80% statement test coverage across all core `internal` packages (`api/rest` 93.5%, `graph` 92.6%, `service` 90.5%, `parser` 88.4%, `search` 85.0%, `repository` 83.3%).
+  - Reconciled Apache-2.0 SPDX licensing headers across all source files.
 - **Comprehensive Section Content Extraction in AST Walker (#2):**
   - Implemented dynamic `Overview` section initialization for introductory lead content appearing before the first heading.
   - Added full line extraction for fenced code blocks (`ast.FencedCodeBlock`), indented code blocks (`ast.CodeBlock`), and list items (`ast.TextBlock`).
