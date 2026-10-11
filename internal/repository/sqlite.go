@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package repository
 
 import (
@@ -63,18 +65,23 @@ func (r *SQLiteRepository) UpsertDocument(ctx context.Context, doc *entities.Doc
 	tx.ExecContext(ctx, "DELETE FROM links WHERE source_document_id = ?", doc.ID)
 	tx.ExecContext(ctx, "DELETE FROM fts_documents WHERE id = ?", doc.ID)
 
-	// 2. Wipe Entity data (linked by name/ID for this document)
-	// We use doc.EntityName as the Entity ID for simplicity in linking.
+	// 2. Wipe Entity properties and outgoing relations for this document
 	entID := doc.EntityName
 	if entID == "" { entID = doc.Title }
 	
-	tx.ExecContext(ctx, "DELETE FROM entities WHERE id = ?", entID)
 	tx.ExecContext(ctx, "DELETE FROM entity_properties WHERE entity_id = ?", entID)
 	tx.ExecContext(ctx, "DELETE FROM entity_relations WHERE source_entity_id = ?", entID)
 
 	// 3. Insert Document data
 	tx.ExecContext(ctx, "INSERT INTO documents (id, path, title, hash, modified_at, indexed_at) VALUES (?, ?, ?, ?, ?, ?)", doc.ID, doc.Path, doc.Title, doc.Hash, doc.ModifiedAt, doc.IndexedAt)
 	tx.ExecContext(ctx, "INSERT INTO fts_documents (id, title, content, tags) VALUES (?, ?, ?, ?)", doc.ID, doc.Title, doc.Content, strings.Join(doc.Tags, " "))
+
+	// Persist document tags
+	tx.ExecContext(ctx, "DELETE FROM document_tags WHERE document_id = ?", doc.ID)
+	for _, tag := range doc.Tags {
+		tx.ExecContext(ctx, "INSERT OR IGNORE INTO tags (id, name) VALUES (?, ?)", tag, tag)
+		tx.ExecContext(ctx, "INSERT OR IGNORE INTO document_tags (document_id, tag_id) VALUES (?, ?)", doc.ID, tag)
+	}
 
 	for _, link := range doc.Links {
 		tx.ExecContext(ctx, "INSERT INTO links (source_document_id, target_document_id) VALUES (?, ?)", link.SourceDocID, link.TargetDocID)
@@ -86,16 +93,32 @@ func (r *SQLiteRepository) UpsertDocument(ctx context.Context, doc *entities.Doc
 
 	// 4. Insert Entity data if IsEntity
 	if doc.IsEntity {
+		tx.ExecContext(ctx, "INSERT OR IGNORE INTO entity_types (id, name) VALUES ('unresolved', 'unresolved')")
 		tx.ExecContext(ctx, "INSERT OR IGNORE INTO entity_types (id, name) VALUES (?, ?)", doc.EntityType, doc.EntityType)
-		tx.ExecContext(ctx, "INSERT INTO entities (id, type_id, name) VALUES (?, ?, ?)", entID, doc.EntityType, doc.EntityName)
+		tx.ExecContext(ctx, "INSERT INTO entities (id, type_id, name) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET type_id = excluded.type_id, name = excluded.name", entID, doc.EntityType, doc.EntityName)
 		
 		for k, v := range doc.EntityProperties {
 			tx.ExecContext(ctx, "INSERT INTO entity_properties (entity_id, property_key, property_value) VALUES (?, ?, ?)", entID, k, v)
 		}
 		
+		seenRel := make(map[string]bool)
 		for _, rel := range doc.EntityRelations {
+			if rel.SourceID == "" || rel.TargetID == "" {
+				continue
+			}
+			relKey := rel.SourceID + "->" + rel.TargetID + ":" + rel.Type
+			if seenRel[relKey] {
+				continue
+			}
+			seenRel[relKey] = true
+
+			// Ensure target entity stub exists to satisfy relational integrity
+			tx.ExecContext(ctx, "INSERT OR IGNORE INTO entities (id, type_id, name) VALUES (?, 'unresolved', ?)", rel.TargetID, rel.TargetID)
+
 			tx.ExecContext(ctx, "INSERT INTO entity_relations (source_entity_id, target_entity_id, relation_type) VALUES (?, ?, ?)", rel.SourceID, rel.TargetID, rel.Type)
 		}
+	} else {
+		tx.ExecContext(ctx, "DELETE FROM entities WHERE id = ?", entID)
 	}
 
 	return tx.Commit()

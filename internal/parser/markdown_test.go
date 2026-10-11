@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package parser
 
 import (
@@ -5,17 +7,126 @@ import (
 	"testing"
 )
 
-func TestParseFile(t *testing.T) {
-	// Create temp markdown file
+func TestParseFile_EntityAndRelations(t *testing.T) {
 	content := `---
 type: component
-owner: robert
-status: active
+name: AuthGateway
+owner: security-team
+tier: 1
+uses:
+  - TokenService
+  - UserDB
 ---
-# Architecture
-This is a test document with a link to [[Encryption]] and a tag #security.
+# Authentication Gateway
+The gateway handles incoming requests and validates them with [[TokenService]].
+It also stores auditing records in [[AuditLogger]] and adheres to #security and #compliance.
 `
-	f, _ := os.CreateTemp("", "*.md")
+	f, err := os.CreateTemp("", "*.md")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(f.Name())
+	if _, err := f.WriteString(content); err != nil {
+		t.Fatalf("Failed to write to temp file: %v", err)
+	}
+	f.Close()
+
+	p := NewParser()
+	doc, err := p.ParseFile(f.Name())
+	if err != nil {
+		t.Fatalf("ParseFile failed: %v", err)
+	}
+
+	// 1. Entity attributes
+	if !doc.IsEntity {
+		t.Fatalf("Expected doc.IsEntity to be true")
+	}
+	if doc.EntityType != "component" {
+		t.Errorf("Expected EntityType 'component', got '%s'", doc.EntityType)
+	}
+	if doc.EntityName != "AuthGateway" {
+		t.Errorf("Expected EntityName 'AuthGateway', got '%s'", doc.EntityName)
+	}
+
+	// 2. Scalar properties
+	if doc.EntityProperties["owner"] != "security-team" {
+		t.Errorf("Expected owner 'security-team', got '%s'", doc.EntityProperties["owner"])
+	}
+	if doc.EntityProperties["tier"] != "1" {
+		t.Errorf("Expected tier '1', got '%s'", doc.EntityProperties["tier"])
+	}
+
+	// 3. Frontmatter relations
+	hasUsesToken := false
+	hasUsesDB := false
+	for _, rel := range doc.EntityRelations {
+		if rel.SourceID == "AuthGateway" && rel.TargetID == "TokenService" && rel.Type == "USES" {
+			hasUsesToken = true
+		}
+		if rel.SourceID == "AuthGateway" && rel.TargetID == "UserDB" && rel.Type == "USES" {
+			hasUsesDB = true
+		}
+	}
+	if !hasUsesToken {
+		t.Errorf("Expected EntityRelation USES TokenService, got %+v", doc.EntityRelations)
+	}
+	if !hasUsesDB {
+		t.Errorf("Expected EntityRelation USES UserDB, got %+v", doc.EntityRelations)
+	}
+
+	// 4. Wikilinks & LINKS_TO relations
+	hasLinkToken := false
+	hasLinkAudit := false
+	for _, link := range doc.Links {
+		if link.TargetDocID == "TokenService" {
+			hasLinkToken = true
+		}
+		if link.TargetDocID == "AuditLogger" {
+			hasLinkAudit = true
+		}
+	}
+	if !hasLinkToken {
+		t.Errorf("Expected Wikilink 'TokenService' in doc.Links, got %+v", doc.Links)
+	}
+	if !hasLinkAudit {
+		t.Errorf("Expected Wikilink 'AuditLogger' in doc.Links, got %+v", doc.Links)
+	}
+
+	hasRelLinksAudit := false
+	for _, rel := range doc.EntityRelations {
+		if rel.TargetID == "AuditLogger" && rel.Type == "LINKS_TO" {
+			hasRelLinksAudit = true
+			break
+		}
+	}
+	if !hasRelLinksAudit {
+		t.Errorf("Expected LINKS_TO relation for AuditLogger, got %+v", doc.EntityRelations)
+	}
+
+	// 5. Hashtags
+	hasSecurityTag := false
+	hasComplianceTag := false
+	for _, tag := range doc.Tags {
+		if tag == "security" {
+			hasSecurityTag = true
+		}
+		if tag == "compliance" {
+			hasComplianceTag = true
+		}
+	}
+	if !hasSecurityTag || !hasComplianceTag {
+		t.Errorf("Expected tags 'security' and 'compliance', got %+v", doc.Tags)
+	}
+}
+
+func TestParseFile_NonEntityDocument(t *testing.T) {
+	content := `# Regular Note
+Just a standard markdown note linking to [[ArchitectureGuide]].
+`
+	f, err := os.CreateTemp("", "*.md")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
 	defer os.Remove(f.Name())
 	f.WriteString(content)
 	f.Close()
@@ -26,7 +137,13 @@ This is a test document with a link to [[Encryption]] and a tag #security.
 		t.Fatalf("ParseFile failed: %v", err)
 	}
 
-	if doc.Metadata["type"] != "component" {
-		t.Errorf("Expected type metadata 'component', got %v", doc.Metadata["type"])
+	if doc.IsEntity {
+		t.Errorf("Expected doc.IsEntity to be false")
+	}
+	if len(doc.Links) != 1 || doc.Links[0].TargetDocID != "ArchitectureGuide" {
+		t.Errorf("Expected 1 link to ArchitectureGuide, got %+v", doc.Links)
+	}
+	if len(doc.EntityRelations) != 0 {
+		t.Errorf("Expected 0 entity relations for non-entity doc, got %+v", doc.EntityRelations)
 	}
 }

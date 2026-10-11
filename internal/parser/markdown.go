@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package parser
 
 import (
@@ -6,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -15,6 +18,11 @@ import (
 	"github.com/yuin/goldmark/ast"
 	gmparser "github.com/yuin/goldmark/parser"
 	"github.com/yuin/goldmark/text"
+)
+
+var (
+	wikilinkRegex = regexp.MustCompile(`\[\[(.*?)\]\]`)
+	tagRegex      = regexp.MustCompile(`(?:^|\s)#([a-zA-Z0-9_\-]+)`)
 )
 
 type Parser struct {
@@ -106,11 +114,12 @@ func (p *Parser) extractAST(doc *entities.Document, content []byte) {
 		}
 	}
 
-		currentSectionIdx := -1
+	currentSectionIdx := -1
 
 	ast.Walk(node, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if heading, ok := n.(*ast.Heading); ok && entering {
 			headingText := string(heading.Text(content))
+			p.extractLinksAndTags(doc, headingText)
 			doc.Sections = append(doc.Sections, entities.Section{
 				ID:      doc.ID + "-" + headingText,
 				Heading: headingText,
@@ -121,26 +130,28 @@ func (p *Parser) extractAST(doc *entities.Document, content []byte) {
 			return ast.WalkContinue, nil
 		}
 
-		if textNode, ok := n.(*ast.Text); ok && entering {
-			val := string(textNode.Segment.Value(content))
-			
-			if strings.HasPrefix(val, "[[") && strings.HasSuffix(val, "]]") {
-				target := strings.TrimSuffix(strings.TrimPrefix(val, "[["), "]]")
-				doc.Links = append(doc.Links, entities.Link{
-					SourceDocID: doc.ID,
-					TargetDocID: target,
-				})
+		if para, ok := n.(*ast.Paragraph); ok && entering {
+			var sb strings.Builder
+			for i := 0; i < para.Lines().Len(); i++ {
+				line := para.Lines().At(i)
+				sb.Write(line.Value(content))
 			}
+			paraText := sb.String()
+			p.extractLinksAndTags(doc, paraText)
 
 			if currentSectionIdx >= 0 {
-				doc.Sections[currentSectionIdx].Content += val + " "
+				doc.Sections[currentSectionIdx].Content += paraText + "\n\n"
 			}
 		}
 
-		if _, ok := n.(*ast.Paragraph); ok && !entering {
-			if currentSectionIdx >= 0 {
-				doc.Sections[currentSectionIdx].Content += "\\n\\n"
+		if li, ok := n.(*ast.ListItem); ok && entering {
+			var sb strings.Builder
+			for i := 0; i < li.Lines().Len(); i++ {
+				line := li.Lines().At(i)
+				sb.Write(line.Value(content))
 			}
+			liText := sb.String()
+			p.extractLinksAndTags(doc, liText)
 		}
 
 		return ast.WalkContinue, nil
@@ -151,6 +162,49 @@ func (p *Parser) extractAST(doc *entities.Document, content []byte) {
 		doc.Content += doc.Sections[i].Heading + "\\n" + doc.Sections[i].Content + "\\n\\n"
 	}
 	doc.Content = strings.TrimSpace(doc.Content)
+}
+
+func (p *Parser) extractLinksAndTags(doc *entities.Document, rawText string) {
+	// Extract inline Wikilinks [[Target]]
+	matches := wikilinkRegex.FindAllStringSubmatch(rawText, -1)
+	for _, m := range matches {
+		if len(m) > 1 {
+			target := strings.TrimSpace(m[1])
+			if target != "" {
+				doc.Links = append(doc.Links, entities.Link{
+					SourceDocID: doc.ID,
+					TargetDocID: target,
+				})
+				if doc.IsEntity {
+					doc.EntityRelations = append(doc.EntityRelations, entities.EntityRelation{
+						SourceID: doc.EntityName,
+						TargetID: target,
+						Type:     "LINKS_TO",
+					})
+				}
+			}
+		}
+	}
+
+	// Extract inline hashtags #tag
+	tagMatches := tagRegex.FindAllStringSubmatch(rawText, -1)
+	for _, tm := range tagMatches {
+		if len(tm) > 1 {
+			tag := strings.TrimSpace(tm[1])
+			if tag != "" {
+				found := false
+				for _, existing := range doc.Tags {
+					if existing == tag {
+						found = true
+						break
+					}
+				}
+				if !found {
+					doc.Tags = append(doc.Tags, tag)
+				}
+			}
+		}
+	}
 }
 
 func parserContext() gmparser.Context {

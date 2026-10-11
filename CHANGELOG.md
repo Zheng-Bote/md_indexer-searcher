@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Robust Entity Extraction & Relation Linking (#1):**
+  - Enhanced AST parser to extract inline `[[Wikilinks]]` and `#hashtags` anywhere in Markdown body text (paragraphs, headings, list items).
+  - Automatically mapped inline Wikilinks to `LINKS_TO` entity relations when the document is an Entity.
+  - Implemented forward reference resilience in SQLite `UpsertDocument` with `unresolved` stub entities, ensuring relational foreign keys are satisfied without race conditions or insertion failures.
+  - Persisted document tags into `document_tags` relational table.
+  - Added table-driven parser tests and in-memory SQLite repository tests.
+  - Added Apache-2.0 SPDX headers to parser and repository modules.
+
 ## [v0.1.0] - 2026-10-08
 
 ### Added
