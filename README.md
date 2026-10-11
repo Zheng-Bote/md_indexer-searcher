@@ -95,8 +95,12 @@ graph TD
     SearchEngine --> API[md-api\nREST Server]
     SearchEngine --> CLI[md-search\nCLI Tool]
     
+    DB --> AIAssistant[md-ai\nGrounded AI / RAG]
+    Ollama[Local Ollama\ne.g. gemma3:1b] <--> AIAssistant
+
     Client[Web / UI Client] --> API
     User[Terminal User] --> CLI
+    User --> AIAssistant
 ```
 
 ## Setup & Build
@@ -108,6 +112,7 @@ The project uses a Makefile for the build process.
 make build    # md-indexer
 make search   # md-search
 make api      # md-api
+make ai       # md-ai (grounded AI assistant)
 
 # Run all tests
 make test
