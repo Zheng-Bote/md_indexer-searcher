@@ -11,6 +11,7 @@ This project provides a local, lightweight knowledge-graph and search infrastruc
 The system is based on the principles of **Clean Architecture**:
 - **Source of Truth**: Markdown files in the filesystem are the only truth. The SQLite database is a pure materialized index and can be deleted and rebuilt at any time.
 - **Separation of Concerns**: Strict separation between file parsing (`md-indexer`) and query operations (`md-search` & `md-api`). The search layer has no filesystem access and reads exclusively from the database.
+- **Graph Engine via Recursive CTEs**: Graph traversals (dependency trees, impact analysis, shortest paths) are executed in SQLite using recursive Common Table Expressions (`WITH RECURSIVE`), avoiding N+1 query loops while remaining CGO-free.
 
 ## Data Model & ER Diagram (SQLite & FTS5)
 
@@ -139,24 +140,29 @@ Allows searching the graph from the terminal. The `-db` flag can be set (default
 # Full-text search via FTS5 (title, content, tags)
 ./bin/md-search search "encryption strategy"
 
-# Format output as JSON
+# Format output as JSON (available on all subcommands)
 ./bin/md-search search "encryption strategy" --json
 
 # Show details for a specific document
 ./bin/md-search document "ADR-003"
+
+# Impact analysis for an entity (incoming dependencies via recursive CTE)
+./bin/md-search impact "Package Model"
+
+# Dependency tree for an entity (outgoing dependencies via recursive CTE)
+./bin/md-search graph "Transformation Engine"
 ```
 
-**(In development / partially implemented)**:
+**Planned CLI subcommands (Roadmap):**
 ```bash
 ./bin/md-search entity "Transformation Engine"
 ./bin/md-search backlinks "Encryption Service"
 ./bin/md-search relations "Transformation Engine"
-./bin/md-search impact "Package Model"
 ```
 
 ### 3. md-api (REST API)
 
-Starts an HTTP server that accepts search requests (default port 8081).
+Starts an HTTP server that accepts search and graph requests (default port 8081).
 
 ```bash
 make api-run
@@ -171,5 +177,7 @@ make api-run
 - `GET /api/documents/{name}`: Load a specific document
 - `GET /api/entities/{name}`: Load an extracted entity (type + properties)
 - `GET /api/backlinks/{name}`: Find documents that link to `{name}`
+- `GET /api/impact/{name}`: Recursive impact analysis for an entity
+- `GET /api/graph/{name}`: Recursive dependency tree for an entity
 
 *(The exact specification is documented in the included `openapi.yaml` file).*
