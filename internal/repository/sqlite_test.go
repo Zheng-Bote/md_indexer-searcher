@@ -119,3 +119,121 @@ func TestSQLiteRepository_UpsertEntityAndRelations(t *testing.T) {
 		t.Errorf("Expected resolved type 'storage', got %s", stubType)
 	}
 }
+
+func TestSQLiteRepository_CRUD_Search_AndBacklinks(t *testing.T) {
+	ctx := context.Background()
+	repo, err := NewSQLiteRepository(":memory:")
+	if err != nil {
+		t.Fatalf("Failed to initialize repo: %v", err)
+	}
+	defer repo.Close()
+
+	doc1 := &entities.Document{
+		ID:         "doc-101",
+		Path:       "/vault/DocA.md",
+		Title:      "Document Alpha",
+		Content:    "Alpha is an encryption component handling cipher algorithms.",
+		Hash:       "hash-alpha",
+		ModifiedAt: time.Now(),
+		IndexedAt:  time.Now(),
+		Tags:       []string{"crypto", "security"},
+		Links: []entities.Link{
+			{SourceDocID: "doc-101", TargetDocID: "doc-102"},
+		},
+		Sections: []entities.Section{
+			{ID: "doc-101-s1", DocumentID: "doc-101", Heading: "Overview", Level: 1, Content: "Alpha overview content."},
+		},
+	}
+
+	doc2 := &entities.Document{
+		ID:         "doc-102",
+		Path:       "/vault/DocB.md",
+		Title:      "Document Beta",
+		Content:    "Beta is a database adapter with connection pooling.",
+		Hash:       "hash-beta",
+		ModifiedAt: time.Now(),
+		IndexedAt:  time.Now(),
+		Tags:       []string{"db"},
+	}
+
+	if err := repo.UpsertDocument(ctx, doc1); err != nil {
+		t.Fatalf("Upsert doc1 failed: %v", err)
+	}
+	if err := repo.UpsertDocument(ctx, doc2); err != nil {
+		t.Fatalf("Upsert doc2 failed: %v", err)
+	}
+
+	// 1. GetDocumentByPath
+	foundDoc, err := repo.GetDocumentByPath(ctx, "/vault/DocA.md")
+	if err != nil || foundDoc == nil {
+		t.Fatalf("Expected to find DocA by path, got %v, err: %v", foundDoc, err)
+	}
+	if foundDoc.ID != "doc-101" {
+		t.Errorf("Expected ID 'doc-101', got %s", foundDoc.ID)
+	}
+
+	notFound, err := repo.GetDocumentByPath(ctx, "/non/existent.md")
+	if err != nil || notFound != nil {
+		t.Errorf("Expected nil for non-existent path, got %v, err: %v", notFound, err)
+	}
+
+	// 2. GetAllDocuments
+	allDocs, err := repo.GetAllDocuments(ctx)
+	if err != nil {
+		t.Fatalf("GetAllDocuments failed: %v", err)
+	}
+	if len(allDocs) != 2 {
+		t.Errorf("Expected 2 documents, got %d", len(allDocs))
+	}
+
+	// 3. FTS Search
+	searchResults, err := repo.Search(ctx, "encryption")
+	if err != nil {
+		t.Fatalf("Search failed: %v", err)
+	}
+	if len(searchResults) == 0 {
+		t.Errorf("Expected search results for 'encryption', got 0")
+	} else if searchResults[0].DocumentID != "doc-101" {
+		t.Errorf("Expected match for doc-101, got %s", searchResults[0].DocumentID)
+	}
+
+	// 4. SearchRepository tests
+	searchRepo := NewSearchRepository(repo)
+
+	// FindDocumentByTitle
+	byTitle, err := searchRepo.FindDocumentByTitle(ctx, "Document Beta")
+	if err != nil || byTitle == nil {
+		t.Fatalf("FindDocumentByTitle failed: %v", err)
+	}
+	if byTitle.ID != "doc-102" {
+		t.Errorf("Expected ID doc-102, got %s", byTitle.ID)
+	}
+
+	// GetBacklinks (doc1 links to doc2)
+	backlinks, err := searchRepo.GetBacklinks(ctx, "doc-102")
+	if err != nil {
+		t.Fatalf("GetBacklinks failed: %v", err)
+	}
+	if len(backlinks) != 1 || backlinks[0] != "Document Alpha" {
+		t.Errorf("Expected backlink from 'Document Alpha', got %+v", backlinks)
+	}
+
+	// FindEntityByName (non-existent) and FindDocumentByTitle (non-existent)
+	ghostEnt, err := searchRepo.FindEntityByName(ctx, "Ghost")
+	if err != nil || ghostEnt != nil {
+		t.Errorf("Expected nil for non-existent entity, got %v, err: %v", ghostEnt, err)
+	}
+	ghostDoc, err := searchRepo.FindDocumentByTitle(ctx, "Ghost")
+	if err != nil || ghostDoc != nil {
+		t.Errorf("Expected nil for non-existent document, got %v, err: %v", ghostDoc, err)
+	}
+
+	// 5. RemoveDocument
+	if err := repo.RemoveDocument(ctx, "/vault/DocA.md"); err != nil {
+		t.Fatalf("RemoveDocument failed: %v", err)
+	}
+	deletedDoc, err := repo.GetDocumentByPath(ctx, "/vault/DocA.md")
+	if err != nil || deletedDoc != nil {
+		t.Errorf("Expected nil after removal, got %v", deletedDoc)
+	}
+}
