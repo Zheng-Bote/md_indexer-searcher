@@ -11,6 +11,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/md-indexer/internal/ai/assistant"
+	"github.com/md-indexer/internal/ai/classifier"
+	"github.com/md-indexer/internal/ai/config"
+	"github.com/md-indexer/internal/ai/contextbuilder"
+	"github.com/md-indexer/internal/ai/provider"
+	"github.com/md-indexer/internal/ai/retriever"
 	"github.com/md-indexer/internal/api/rest"
 	"github.com/md-indexer/internal/repository"
 	"github.com/md-indexer/internal/search"
@@ -22,6 +28,9 @@ func main() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
 	dbPath := flag.String("db", "index.db", "Path to SQLite database")
 	port := flag.String("port", "8081", "HTTP server port")
+	aiEnabled := flag.Bool("ai", false, "Enable AI assistant endpoint (/api/ai/ask)")
+	ollamaHost := flag.String("ollama-host", "http://localhost:11434", "Ollama API host URL")
+	modelName := flag.String("model", "gemma3:1b", "LLM model name for AI endpoint")
 	flag.Parse()
 
 	repo, err := repository.NewSQLiteRepository(*dbPath)
@@ -33,6 +42,21 @@ func main() {
 	searchEngine := search.NewSearchEngine(repo)
 	
 	server := rest.NewServer(searchEngine)
+
+	if *aiEnabled || os.Getenv("MD_API_ENABLE_AI") == "true" {
+		aiCfg := config.DefaultConfig()
+		aiCfg.DBPath = *dbPath
+		aiCfg.OllamaHost = *ollamaHost
+		aiCfg.Model = *modelName
+		clf := classifier.NewRuleClassifier()
+		ret := retriever.NewRetriever(repo.GetDB(), aiCfg.GraphDepth)
+		cb := contextbuilder.NewContextBuilder(aiCfg.MaxContextTokens)
+		prov := provider.NewOllamaProvider(aiCfg.OllamaHost, nil)
+		asst := assistant.NewAssistant(aiCfg, clf, ret, cb, prov)
+		server.WithAssistant(asst)
+		log.Info().Str("model", *modelName).Msg("AI Assistant endpoint /api/ai/ask enabled")
+	}
+
 	httpServer := &http.Server{
 		Addr:    ":" + *port,
 		Handler: server.Handler(),

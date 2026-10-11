@@ -242,6 +242,11 @@ curl http://localhost:8081/api/impact/UserDatabase
 
 # Retrieve backlinks (notes linking to TokenSigner)
 curl http://localhost:8081/api/backlinks/TokenSigner
+
+# Grounded AI Q&A via HTTP (when started with -ai flag: ./bin/md-api -db knowledge.db -ai)
+curl -X POST http://localhost:8081/api/ai/ask \
+  -H "Content-Type: application/json" \
+  -d '{"question": "What components does AuthService connect to?"}'
 ```
 
 ### 5. Grounded AI Assistant (`md-ai`)
