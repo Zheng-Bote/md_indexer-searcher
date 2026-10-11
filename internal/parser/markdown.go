@@ -115,6 +115,18 @@ func (p *Parser) extractAST(doc *entities.Document, content []byte) {
 	}
 
 	currentSectionIdx := -1
+	ensureSection := func() int {
+		if currentSectionIdx < 0 {
+			doc.Sections = append(doc.Sections, entities.Section{
+				ID:      doc.ID + "-overview",
+				Heading: "Overview",
+				Level:   1,
+				Content: "",
+			})
+			currentSectionIdx = len(doc.Sections) - 1
+		}
+		return currentSectionIdx
+	}
 
 	ast.Walk(node, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if heading, ok := n.(*ast.Heading); ok && entering {
@@ -139,19 +151,47 @@ func (p *Parser) extractAST(doc *entities.Document, content []byte) {
 			paraText := sb.String()
 			p.extractLinksAndTags(doc, paraText)
 
-			if currentSectionIdx >= 0 {
-				doc.Sections[currentSectionIdx].Content += paraText + "\n\n"
-			}
+			idx := ensureSection()
+			doc.Sections[idx].Content += paraText + "\n\n"
 		}
 
-		if li, ok := n.(*ast.ListItem); ok && entering {
+		if fcb, ok := n.(*ast.FencedCodeBlock); ok && entering {
 			var sb strings.Builder
-			for i := 0; i < li.Lines().Len(); i++ {
-				line := li.Lines().At(i)
+			for i := 0; i < fcb.Lines().Len(); i++ {
+				line := fcb.Lines().At(i)
 				sb.Write(line.Value(content))
 			}
-			liText := sb.String()
-			p.extractLinksAndTags(doc, liText)
+			codeText := sb.String()
+			p.extractLinksAndTags(doc, codeText)
+
+			idx := ensureSection()
+			doc.Sections[idx].Content += "```\n" + codeText + "```\n\n"
+		}
+
+		if cb, ok := n.(*ast.CodeBlock); ok && entering {
+			var sb strings.Builder
+			for i := 0; i < cb.Lines().Len(); i++ {
+				line := cb.Lines().At(i)
+				sb.Write(line.Value(content))
+			}
+			codeText := sb.String()
+			p.extractLinksAndTags(doc, codeText)
+
+			idx := ensureSection()
+			doc.Sections[idx].Content += codeText + "\n\n"
+		}
+
+		if tb, ok := n.(*ast.TextBlock); ok && entering {
+			var sb strings.Builder
+			for i := 0; i < tb.Lines().Len(); i++ {
+				line := tb.Lines().At(i)
+				sb.Write(line.Value(content))
+			}
+			tbText := sb.String()
+			p.extractLinksAndTags(doc, tbText)
+
+			idx := ensureSection()
+			doc.Sections[idx].Content += "- " + tbText + "\n"
 		}
 
 		return ast.WalkContinue, nil
@@ -159,7 +199,7 @@ func (p *Parser) extractAST(doc *entities.Document, content []byte) {
 
 	for i := range doc.Sections {
 		doc.Sections[i].Content = strings.TrimSpace(doc.Sections[i].Content)
-		doc.Content += doc.Sections[i].Heading + "\\n" + doc.Sections[i].Content + "\\n\\n"
+		doc.Content += doc.Sections[i].Heading + "\n" + doc.Sections[i].Content + "\n\n"
 	}
 	doc.Content = strings.TrimSpace(doc.Content)
 }

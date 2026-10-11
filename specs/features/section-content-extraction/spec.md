@@ -1,17 +1,31 @@
-# Feature Spec: Section Content Extraction
+# Feature Specification: Comprehensive Section Content Extraction in AST Walker
 
-## 1. Problem & Goal
-Currently, the markdown parser extracts heading names to create `Section` entities, but the actual text content under each heading is discarded. Additionally, the SQLite FTS5 index receives an empty string for document content, making full-text search less effective.
+**Issue:** [#2](https://github.com/Zheng-Bote/md_indexer-searcher/issues/2)  
+**Status:** In Progress (Specify / Plan Phase)
 
-## 2. Scope & Acceptance Criteria
-*   The AST walker must maintain state to aggregate text segments into the `Content` field of the current `Section`.
-*   The `entities.Document` struct must expose a `Content` field holding the aggregated text of the entire document.
-*   The `UpsertDocument` function must insert the full document `Content` into the `fts_documents` table.
+## 1. Feature Intent
 
-## 3. Architecture Plan
-*   **Target:** `internal/entities/models.go`, `internal/parser/markdown.go`, `internal/repository/sqlite.go`.
+The goal is to ensure complete and lossless extraction of Markdown section contents into `Section.Content` and `Document.Content`. This includes capturing leading intro text prior to any heading, as well as code blocks, lists, blockquotes, and other rich AST blocks, so that the SQLite `sections` table and FTS5 search index contain the complete text representation of all notes.
 
-## 4. Tasks
-*   [ ] Task 1: Add `Content string` to `entities.Document`.
-*   [ ] Task 2: Modify `ast.Walk` in `markdown.go` to append text to the current section and the full document content.
-*   [ ] Task 3: Update `UpsertDocument` in `sqlite.go` to insert `doc.Content` instead of an empty string into `fts_documents`.
+Markdown files remain strictly Read-Only and the Single Source of Truth.
+
+## 2. Requirements (EARS Syntax)
+
+1. **Lead / Introductory Content Capture:** While parsing Markdown content prior to the first heading, the parser shall dynamically initialize and assign text to an `Overview` section (`Level: 1`, `ID: doc.ID + "-overview"`) instead of discarding it.
+2. **Rich AST Elements Extraction:** When traversing non-text block AST nodes (such as `ast.FencedCodeBlock`, `ast.CodeBlock`, `ast.ListItem`), the parser shall extract their text lines and append them to the active section's content.
+3. **Lossless Document Content Aggregation:** When all sections are finalized, `Document.Content` shall aggregate both section headings and their full contents, ensuring FTS5 indexing has complete text coverage for BM25 ranking.
+4. **Relational Persistence Integrity:** When `UpsertDocument` runs, each section (including introductory sections and rich content) shall be persisted into the `sections` table.
+
+## 3. Scope & Affected Components
+
+* `internal/parser/markdown.go`: AST walking logic for lead paragraphs, code blocks, lists, and section content aggregation.
+* `internal/parser/markdown_test.go`: Tests for documents with lead text before headings, fenced code blocks, and lists.
+* `specs/features/section-content-extraction/`: Spec Kit artifacts (`spec.md`, `plan.md`, `tasks.md`).
+
+## 4. Acceptance Criteria
+
+- [x] Content before the first heading is captured in an `Overview` section in `doc.Sections`.
+- [x] Code blocks (`ast.FencedCodeBlock`, `ast.CodeBlock`) and lists are retained in `Section.Content`.
+- [x] Complete section content is stored in the `sections` table in SQLite.
+- [x] Unit tests verify lead content and rich block extraction.
+- [x] CHANGELOG.md is updated.

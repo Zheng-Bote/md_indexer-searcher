@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Comprehensive Section Content Extraction in AST Walker (#2):**
+  - Implemented dynamic `Overview` section initialization for introductory lead content appearing before the first heading.
+  - Added full line extraction for fenced code blocks (`ast.FencedCodeBlock`), indented code blocks (`ast.CodeBlock`), and list items (`ast.TextBlock`).
+  - Unified section and document content aggregation with real newlines for improved SQLite FTS5 search indexing.
+  - Added unit tests covering lead sections, code blocks, lists, and wikilinks inside list items.
 - **Robust Entity Extraction & Relation Linking (#1):**
   - Enhanced AST parser to extract inline `[[Wikilinks]]` and `#hashtags` anywhere in Markdown body text (paragraphs, headings, list items).
   - Automatically mapped inline Wikilinks to `LINKS_TO` entity relations when the document is an Entity.
