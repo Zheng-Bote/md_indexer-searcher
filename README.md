@@ -239,8 +239,55 @@ curl http://localhost:8081/api/impact/UserDatabase
 curl http://localhost:8081/api/backlinks/TokenSigner
 ```
 
-### 5. Automated Verification
+### 5. Grounded AI Assistant (`md-ai`)
+
+`md-ai` provides a grounded AI assistant / RAG layer connected to your local Ollama instance (default: `gemma3:1b`) without leaking notes to cloud providers or modifying your markdown files.
+
+#### Single-Shot Query (`ask`)
+```bash
+./bin/md-ai ask "What does AuthService depend on and what are the security decisions?" --db knowledge.db
+```
+
+*Example Output:*
+```text
+According to [Doc: examples/vault/AuthService.md#Architecture], AuthService is responsible for authentication and session management. It depends directly on UserDatabase for credential verification and TokenSigner for cryptographic signature generation.
+
+Sources:
+- examples/vault/AuthService.md#Architecture
+- examples/vault/TokenSigner.md
+```
+
+#### JSON Output (For Automation / Scripting)
+```bash
+./bin/md-ai ask "What happens if UserDatabase is modified?" --db knowledge.db --json
+```
+
+#### Interactive Terminal Session (`chat`)
+```bash
+./bin/md-ai chat --db knowledge.db
+```
+*Prompt:*
+```text
+=== md-ai Interactive Chat ===
+Model: gemma3:1b | Database: knowledge.db
+Type 'exit', 'quit', or press Ctrl+C to stop.
+
+You > What is the role of TokenSigner?
+TokenSigner generates cryptographic access tokens using Ed25519 signatures according to [Doc: examples/vault/TokenSigner.md].
+
+Sources:
+- examples/vault/TokenSigner.md
+
+You > What depends on it?
+AuthService depends on TokenSigner for token signing according to [Doc: examples/vault/AuthService.md].
+
+Sources:
+- examples/vault/AuthService.md
+```
+
+### 6. Automated Verification
 This end-to-end physical use-case is continuously verified by an automated integration test:
 ```bash
 go test -v ./examples
 ```
+
