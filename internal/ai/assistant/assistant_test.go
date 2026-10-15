@@ -6,6 +6,7 @@ package assistant
 import (
 	"context"
 	"database/sql"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -16,74 +17,34 @@ import (
 	"github.com/md-indexer/internal/ai/model"
 	"github.com/md-indexer/internal/ai/provider"
 	"github.com/md-indexer/internal/ai/retriever"
-	_ "modernc.org/sqlite"
+	"github.com/md-indexer/internal/entities"
+	"github.com/md-indexer/internal/repository"
 )
 
 func setupAssistantTestDB(t *testing.T) *sql.DB {
-	db, err := sql.Open("sqlite", ":memory:")
+	t.Helper()
+	// Use the real indexer migration and write path; a file-backed DB keeps pooled connections consistent.
+	repo, err := repository.NewSQLiteRepository(filepath.Join(t.TempDir(), "knowledge.db"))
 	if err != nil {
-		t.Fatalf("failed to open in-memory db: %v", err)
+		t.Fatalf("failed to init repository: %v", err)
 	}
+	t.Cleanup(func() { repo.Close() })
 
-	schema := `
-	CREATE TABLE documents (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		path TEXT UNIQUE NOT NULL,
-		title TEXT NOT NULL,
-		body TEXT NOT NULL
-	);
-	CREATE VIRTUAL TABLE documents_fts USING fts5(
-		title,
-		body,
-		content='documents',
-		content_rowid='id'
-	);
-	CREATE TABLE sections (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		document_id INTEGER NOT NULL,
-		heading TEXT NOT NULL,
-		content TEXT NOT NULL
-	);
-	CREATE TABLE entities (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		name TEXT NOT NULL,
-		type TEXT NOT NULL,
-		document_uri TEXT NOT NULL,
-		description TEXT
-	);
-	CREATE TABLE entity_relations (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		source_entity TEXT NOT NULL,
-		relation_type TEXT NOT NULL,
-		target_entity TEXT NOT NULL,
-		document_uri TEXT NOT NULL
-	);
-	CREATE TABLE links (
-		source_path TEXT NOT NULL,
-		target_path TEXT NOT NULL
-	);
-	`
-	if _, err := db.Exec(schema); err != nil {
-		t.Fatalf("failed to create schema: %v", err)
-	}
-
-	_, err = db.Exec(`
-		INSERT INTO documents (id, path, title, body) VALUES
-		(1, 'docs/adr/001-sqlite.md', 'ADR 001: SQLite Choice', 'We chose modernc sqlite.');
-		INSERT INTO documents_fts (rowid, title, body) VALUES
-		(1, 'ADR 001: SQLite Choice', 'We chose modernc sqlite.');
-		INSERT INTO sections (document_id, heading, content) VALUES
-		(1, 'Decision', 'Modernc sqlite avoids CGO.');
-	`)
+	err = repo.UpsertDocument(context.Background(), &entities.Document{
+		ID:       "doc-adr",
+		Path:     "docs/adr/001-sqlite.md",
+		Title:    "ADR 001: SQLite Choice",
+		Content:  "Decision\nModernc sqlite avoids CGO.",
+		Sections: []entities.Section{{ID: "doc-adr-decision", Heading: "Decision", Level: 2, Content: "Modernc sqlite avoids CGO."}},
+	})
 	if err != nil {
 		t.Fatalf("failed to insert data: %v", err)
 	}
-	return db
+	return repo.GetDB()
 }
 
 func TestAssistant_Ask(t *testing.T) {
 	db := setupAssistantTestDB(t)
-	defer db.Close()
 
 	cfg := config.DefaultConfig()
 	clf := classifier.NewRuleClassifier()
