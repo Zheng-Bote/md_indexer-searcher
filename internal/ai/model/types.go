@@ -68,6 +68,8 @@ type GenerateRequest struct {
 	System      string  `json:"system,omitempty"`
 	Temperature float64 `json:"temperature"`
 	MaxTokens   int     `json:"max_tokens"`
+	// ContextWindow is the total token window (prompt + output) the model must allocate; 0 keeps the provider default.
+	ContextWindow int `json:"context_window,omitempty"`
 }
 
 // GenerateResponse represents the response received from an LLM provider.

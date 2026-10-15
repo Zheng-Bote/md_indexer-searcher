@@ -125,3 +125,13 @@ func TestAssistant_Ask(t *testing.T) {
 		t.Errorf("expected answer content, got %s", ans2.Answer)
 	}
 }
+
+func TestContextWindow(t *testing.T) {
+	if got := contextWindow("sys", "short prompt", 2048); got != 8192 {
+		t.Errorf("expected minimum window 8192, got %d", got)
+	}
+	// 60000 bytes ~ 20000 tokens + 2048 output -> next 8192 step above 22048.
+	if got := contextWindow("", strings.Repeat("a", 60000), 2048); got != 24576 {
+		t.Errorf("expected window 24576, got %d", got)
+	}
+}

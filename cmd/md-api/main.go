@@ -51,7 +51,7 @@ func main() {
 		clf := classifier.NewRuleClassifier()
 		ret := retriever.NewRetriever(repo.GetDB(), aiCfg.GraphDepth)
 		cb := contextbuilder.NewContextBuilder(aiCfg.MaxContextTokens)
-		prov := provider.NewOllamaProvider(aiCfg.OllamaHost, nil)
+		prov := provider.NewOllamaProvider(aiCfg.OllamaHost, &http.Client{Timeout: aiCfg.Timeout()})
 		asst := assistant.NewAssistant(aiCfg, clf, ret, cb, prov)
 		server.WithAssistant(asst)
 		log.Info().Str("model", *modelName).Msg("AI Assistant endpoint /api/ai/ask enabled")

@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 
@@ -45,6 +46,7 @@ func init() {
 	rootCmd.PersistentFlags().IntVar(&cfg.MaxTokens, "max-tokens", cfg.MaxTokens, "Max generated tokens")
 	rootCmd.PersistentFlags().IntVar(&cfg.MaxContextTokens, "max-context-tokens", cfg.MaxContextTokens, "Max context token budget")
 	rootCmd.PersistentFlags().IntVar(&cfg.GraphDepth, "graph-depth", cfg.GraphDepth, "BFS graph traversal depth")
+	rootCmd.PersistentFlags().IntVar(&cfg.TimeoutSeconds, "timeout", cfg.TimeoutSeconds, "LLM request timeout in seconds")
 	rootCmd.PersistentFlags().BoolVar(&cfg.JSONOutput, "json", cfg.JSONOutput, "Output response in JSON format")
 
 	rootCmd.AddCommand(askCmd)
@@ -67,7 +69,7 @@ func initAssistant() (*assistant.Assistant, *sql.DB, error) {
 	clf := classifier.NewRuleClassifier()
 	ret := retriever.NewRetriever(db, cfg.GraphDepth)
 	cb := contextbuilder.NewContextBuilder(cfg.MaxContextTokens)
-	prov := provider.NewOllamaProvider(cfg.OllamaHost, nil)
+	prov := provider.NewOllamaProvider(cfg.OllamaHost, &http.Client{Timeout: cfg.Timeout()})
 
 	asst := assistant.NewAssistant(cfg, clf, ret, cb, prov)
 	return asst, db, nil

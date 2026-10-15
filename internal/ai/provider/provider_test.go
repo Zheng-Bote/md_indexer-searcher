@@ -6,6 +6,7 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -42,12 +43,26 @@ func TestOllamaProvider_Generate(t *testing.T) {
 		if r.URL.Path != "/api/generate" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("failed to read request: %v", err)
+		}
 		var req ollamaGenerateRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := json.Unmarshal(raw, &req); err != nil {
 			t.Fatalf("failed to decode request: %v", err)
 		}
 		if req.Model != "gemma3:1b" {
 			t.Errorf("expected model gemma3:1b, got %s", req.Model)
+		}
+		var fields map[string]interface{}
+		if err := json.Unmarshal(raw, &fields); err != nil {
+			t.Fatalf("failed to decode request fields: %v", err)
+		}
+		if think, ok := fields["think"]; !ok || think != false {
+			t.Errorf("expected explicit think=false in request, got %v (present: %v)", think, ok)
+		}
+		if numCtx := req.Options["num_ctx"]; numCtx != float64(8192) {
+			t.Errorf("expected num_ctx 8192, got %v", numCtx)
 		}
 
 		resp := ollamaGenerateResponse{
@@ -73,10 +88,11 @@ func TestOllamaProvider_Generate(t *testing.T) {
 	defer cancel()
 
 	genReq := &model.GenerateRequest{
-		Model:       "gemma3:1b",
-		Prompt:      "Explain something",
-		Temperature: 0.1,
-		MaxTokens:   100,
+		Model:         "gemma3:1b",
+		Prompt:        "Explain something",
+		Temperature:   0.1,
+		MaxTokens:     100,
+		ContextWindow: 8192,
 	}
 
 	res, err := provider.Generate(ctx, genReq)
