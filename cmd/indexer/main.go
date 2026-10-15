@@ -13,6 +13,7 @@ import (
 
 	"github.com/md-indexer/internal/api"
 	"github.com/md-indexer/internal/config"
+	"github.com/md-indexer/internal/embedding"
 	"github.com/md-indexer/internal/repository"
 	"github.com/md-indexer/internal/service"
 	"github.com/md-indexer/internal/watcher"
@@ -26,6 +27,8 @@ func main() {
 	dir := flag.String("dir", ".", "Directory to index")
 	dbPath := flag.String("db", "index.db", "Path to SQLite database")
 	port := flag.String("port", "8080", "HTTP server port")
+	embedModel := flag.String("embed-model", "", "Ollama embedding model for vector retrieval, e.g. bge-m3 (empty disables embeddings)")
+	ollamaHost := flag.String("ollama-host", "http://localhost:11434", "Ollama API host URL for embeddings")
 	flag.Parse()
 
 	cfg := config.Config{
@@ -41,6 +44,11 @@ func main() {
 	defer repo.Close()
 
 	indexerService := service.NewIndexerService(repo, cfg.Directory)
+	if *embedModel != "" {
+		embedder := embedding.NewOllamaEmbedder(*ollamaHost, *embedModel, &http.Client{Timeout: 10 * time.Minute})
+		indexerService.WithEmbeddings(service.NewEmbeddingService(repo, embedder))
+		log.Info().Str("model", *embedModel).Msg("Section embeddings enabled")
+	}
 
 	log.Info().Msg("Starting full re-index...")
 	if err := indexerService.IndexAll(context.Background()); err != nil {

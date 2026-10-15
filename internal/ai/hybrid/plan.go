@@ -55,15 +55,15 @@ func (p *Planner) Plan(query string, intent model.Intent) RetrievalPlan {
 	var plan RetrievalPlan
 	switch p.queryType(query, intent) {
 	case QueryFact:
-		plan = RetrievalPlan{QueryType: QueryFact, UseFTS: true, MaxResults: 8}
+		plan = RetrievalPlan{QueryType: QueryFact, UseFTS: true, UseVectors: true, MaxResults: 8}
 	case QueryEntity:
-		plan = RetrievalPlan{QueryType: QueryEntity, UseFTS: true, UseEntities: true, MaxResults: 10}
+		plan = RetrievalPlan{QueryType: QueryEntity, UseFTS: true, UseEntities: true, UseVectors: true, MaxResults: 10}
 	case QueryImpact:
 		plan = RetrievalPlan{QueryType: QueryImpact, UseFTS: true, UseEntities: true, UseGraph: true, GraphDepth: 3, MaxResults: 15}
 	case QueryArchitecture:
-		plan = RetrievalPlan{QueryType: QueryArchitecture, UseFTS: true, UseEntities: true, UseGraph: true, GraphDepth: 4, MaxResults: 15}
+		plan = RetrievalPlan{QueryType: QueryArchitecture, UseFTS: true, UseEntities: true, UseGraph: true, UseVectors: true, GraphDepth: 4, MaxResults: 15}
 	default:
-		plan = RetrievalPlan{QueryType: QueryExploration, UseFTS: true, UseEntities: true, UseGraph: true, GraphDepth: 1, MaxResults: 12}
+		plan = RetrievalPlan{QueryType: QueryExploration, UseFTS: true, UseEntities: true, UseGraph: true, UseVectors: true, GraphDepth: 1, MaxResults: 12}
 	}
 	if plan.GraphDepth > p.maxGraphDepth {
 		plan.GraphDepth = p.maxGraphDepth

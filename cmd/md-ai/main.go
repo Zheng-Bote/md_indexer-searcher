@@ -46,6 +46,8 @@ func init() {
 	rootCmd.PersistentFlags().IntVar(&cfg.MaxContextTokens, "max-context-tokens", cfg.MaxContextTokens, "Max context token budget")
 	rootCmd.PersistentFlags().IntVar(&cfg.GraphDepth, "graph-depth", cfg.GraphDepth, "BFS graph traversal depth")
 	rootCmd.PersistentFlags().StringVar(&cfg.Retriever, "retriever", cfg.Retriever, "Retrieval implementation: hybrid or classic")
+	rootCmd.PersistentFlags().BoolVar(&cfg.EnableVectors, "vectors", cfg.EnableVectors, "Use section embeddings for retrieval (hybrid retriever)")
+	rootCmd.PersistentFlags().StringVar(&cfg.EmbeddingModel, "embedding-model", cfg.EmbeddingModel, "Ollama embedding model; must match the indexer's -embed-model")
 	rootCmd.PersistentFlags().IntVar(&cfg.TimeoutSeconds, "timeout", cfg.TimeoutSeconds, "LLM request timeout in seconds")
 	rootCmd.PersistentFlags().BoolVar(&cfg.JSONOutput, "json", cfg.JSONOutput, "Output response in JSON format")
 

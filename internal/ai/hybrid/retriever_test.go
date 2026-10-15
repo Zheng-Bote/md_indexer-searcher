@@ -86,7 +86,7 @@ func paths(res *model.RetrievalResult) map[string]string {
 }
 
 func TestRetriever_StopwordsDoNotMatch(t *testing.T) {
-	r := NewSQLiteRetriever(setupDB(t), 3, testWeights, 25)
+	r := NewSQLiteRetriever(setupDB(t), 3, nil, testWeights, 25, 25)
 
 	res, err := r.Retrieve(context.Background(), "Wie verschlüssele ich mit der Encryption?", model.IntentSearch)
 	if err != nil {
@@ -102,7 +102,7 @@ func TestRetriever_StopwordsDoNotMatch(t *testing.T) {
 }
 
 func TestRetriever_EntityQuery(t *testing.T) {
-	r := NewSQLiteRetriever(setupDB(t), 3, testWeights, 25)
+	r := NewSQLiteRetriever(setupDB(t), 3, nil, testWeights, 25, 25)
 
 	res, err := r.Retrieve(context.Background(), "Was ist der Encryption Service?", model.IntentEntity)
 	if err != nil {
@@ -129,7 +129,7 @@ func TestRetriever_EntityQuery(t *testing.T) {
 }
 
 func TestRetriever_ArchitectureQueryExpandsGraph(t *testing.T) {
-	r := NewSQLiteRetriever(setupDB(t), 3, testWeights, 25)
+	r := NewSQLiteRetriever(setupDB(t), 3, nil, testWeights, 25, 25)
 
 	res, err := r.Retrieve(context.Background(), "Wie funktioniert die Ingestion Pipeline?", model.IntentSearch)
 	if err != nil {
@@ -149,7 +149,7 @@ func TestRetriever_ArchitectureQueryExpandsGraph(t *testing.T) {
 }
 
 func TestRetriever_FactQuerySkipsGraph(t *testing.T) {
-	r := NewSQLiteRetriever(setupDB(t), 3, testWeights, 25)
+	r := NewSQLiteRetriever(setupDB(t), 3, nil, testWeights, 25, 25)
 
 	res, err := r.Retrieve(context.Background(), "Was ist die Ingestion Pipeline?", model.IntentADR)
 	if err != nil {
@@ -166,7 +166,7 @@ func TestRetriever_FactQuerySkipsGraph(t *testing.T) {
 }
 
 func TestRetriever_EmptyQuery(t *testing.T) {
-	r := NewSQLiteRetriever(setupDB(t), 3, testWeights, 25)
+	r := NewSQLiteRetriever(setupDB(t), 3, nil, testWeights, 25, 25)
 	res, err := r.Retrieve(context.Background(), "wie ich die", model.IntentSearch)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

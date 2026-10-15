@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/md-indexer/internal/entities"
 	_ "modernc.org/sqlite"
@@ -50,6 +51,8 @@ func migrate(db *sql.DB) error {
 	CREATE TABLE IF NOT EXISTS entity_relations (source_entity_id TEXT, target_entity_id TEXT, relation_type TEXT, FOREIGN KEY(source_entity_id) REFERENCES entities(id), FOREIGN KEY(target_entity_id) REFERENCES entities(id));
 
 	CREATE VIRTUAL TABLE IF NOT EXISTS fts_documents USING fts5(id UNINDEXED, title, content, tags);
+	-- Section embeddings for vector retrieval; content_hash detects changed sections.
+	CREATE TABLE IF NOT EXISTS section_embeddings (section_id TEXT PRIMARY KEY, embedding BLOB NOT NULL, dimensions INTEGER NOT NULL, model TEXT NOT NULL, content_hash TEXT NOT NULL, created_at DATETIME NOT NULL);
 	-- Wikilink targets and entities resolve to documents by title.
 	CREATE INDEX IF NOT EXISTS idx_documents_title ON documents(title);
 	CREATE VIRTUAL TABLE IF NOT EXISTS fts_sections USING fts5(section_id UNINDEXED, document_id UNINDEXED, title, heading, tags, content, metadata);
@@ -156,6 +159,80 @@ func propertyValues(props map[string]string) string {
 		values = append(values, props[k])
 	}
 	return strings.Join(values, " ")
+}
+
+// EmbeddableSection is a non-empty section of an indexed document.
+type EmbeddableSection struct {
+	ID      string
+	Title   string
+	Heading string
+	Content string
+}
+
+// EmbeddableSections returns all non-empty sections of indexed documents.
+func (r *SQLiteRepository) EmbeddableSections(ctx context.Context) ([]EmbeddableSection, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT s.id, d.title, s.heading, s.content
+		FROM sections s
+		JOIN documents d ON d.id = s.document_id
+		WHERE s.content != ''`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []EmbeddableSection
+	for rows.Next() {
+		var sec EmbeddableSection
+		if err := rows.Scan(&sec.ID, &sec.Title, &sec.Heading, &sec.Content); err != nil {
+			return nil, err
+		}
+		out = append(out, sec)
+	}
+	return out, rows.Err()
+}
+
+// EmbeddingHashes maps section IDs to the content hash of their stored embedding for a model.
+func (r *SQLiteRepository) EmbeddingHashes(ctx context.Context, model string) (map[string]string, error) {
+	rows, err := r.db.QueryContext(ctx, "SELECT section_id, content_hash FROM section_embeddings WHERE model = ?", model)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	hashes := make(map[string]string)
+	for rows.Next() {
+		var id, hash string
+		if err := rows.Scan(&id, &hash); err != nil {
+			return nil, err
+		}
+		hashes[id] = hash
+	}
+	return hashes, rows.Err()
+}
+
+// SaveEmbedding stores or replaces the embedding of a section.
+func (r *SQLiteRepository) SaveEmbedding(ctx context.Context, sectionID string, vector []byte, dimensions int, model, contentHash string) error {
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO section_embeddings (section_id, embedding, dimensions, model, content_hash, created_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(section_id) DO UPDATE SET embedding = excluded.embedding, dimensions = excluded.dimensions,
+			model = excluded.model, content_hash = excluded.content_hash, created_at = excluded.created_at`,
+		sectionID, vector, dimensions, model, contentHash, time.Now().UTC())
+	return err
+}
+
+// DeleteOrphanEmbeddings removes embeddings whose section is gone, empty or belongs to a removed document.
+func (r *SQLiteRepository) DeleteOrphanEmbeddings(ctx context.Context) (int64, error) {
+	res, err := r.db.ExecContext(ctx, `
+		DELETE FROM section_embeddings
+		WHERE section_id NOT IN (
+			SELECT s.id FROM sections s JOIN documents d ON d.id = s.document_id WHERE s.content != ''
+		)`)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 func (r *SQLiteRepository) RemoveDocument(ctx context.Context, path string) error {

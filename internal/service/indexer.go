@@ -14,9 +14,10 @@ import (
 )
 
 type IndexerService struct {
-	repo   *repository.SQLiteRepository
-	dir    string
-	parser *parser.Parser
+	repo       *repository.SQLiteRepository
+	dir        string
+	parser     *parser.Parser
+	embeddings *EmbeddingService
 }
 
 func NewIndexerService(repo *repository.SQLiteRepository, dir string) *IndexerService {
@@ -27,19 +28,49 @@ func NewIndexerService(repo *repository.SQLiteRepository, dir string) *IndexerSe
 	}
 }
 
+// WithEmbeddings enables keeping section embeddings in sync after indexing.
+func (s *IndexerService) WithEmbeddings(e *EmbeddingService) *IndexerService {
+	s.embeddings = e
+	return s
+}
+
 func (s *IndexerService) IndexAll(ctx context.Context) error {
-	return filepath.Walk(s.dir, func(path string, info os.FileInfo, err error) error {
+	err := filepath.Walk(s.dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 		if !info.IsDir() && strings.HasSuffix(strings.ToLower(path), ".md") {
-			return s.IndexFile(ctx, path)
+			return s.indexFile(ctx, path)
 		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	s.embedPending(ctx)
+	return nil
 }
 
+// IndexFile indexes a single file and then embeds its changed sections.
 func (s *IndexerService) IndexFile(ctx context.Context, path string) error {
+	if err := s.indexFile(ctx, path); err != nil {
+		return err
+	}
+	s.embedPending(ctx)
+	return nil
+}
+
+// embedPending is best effort: the text index stays usable when Ollama is unavailable.
+func (s *IndexerService) embedPending(ctx context.Context) {
+	if s.embeddings == nil {
+		return
+	}
+	if _, err := s.embeddings.EmbedPending(ctx); err != nil {
+		log.Error().Err(err).Msg("Failed to update section embeddings")
+	}
+}
+
+func (s *IndexerService) indexFile(ctx context.Context, path string) error {
 	existingDoc, err := s.repo.GetDocumentByPath(ctx, path)
 	if err != nil {
 		return err
