@@ -6,6 +6,7 @@ package config
 import (
 	"os"
 	"testing"
+	"time"
 )
 
 func TestDefaultConfig(t *testing.T) {
@@ -23,11 +24,13 @@ func TestConfig_LoadFromEnv(t *testing.T) {
 	os.Setenv("MD_AI_TEMPERATURE", "0.7")
 	os.Setenv("MD_AI_GRAPH_DEPTH", "5")
 	os.Setenv("MD_AI_JSON", "true")
+	os.Setenv("MD_AI_TIMEOUT", "900")
 	defer func() {
 		os.Unsetenv("MD_AI_MODEL")
 		os.Unsetenv("MD_AI_TEMPERATURE")
 		os.Unsetenv("MD_AI_GRAPH_DEPTH")
 		os.Unsetenv("MD_AI_JSON")
+		os.Unsetenv("MD_AI_TIMEOUT")
 	}()
 
 	cfg := DefaultConfig()
@@ -44,6 +47,9 @@ func TestConfig_LoadFromEnv(t *testing.T) {
 	}
 	if !cfg.JSONOutput {
 		t.Errorf("expected JSON output true")
+	}
+	if cfg.Timeout() != 900*time.Second {
+		t.Errorf("expected timeout 900s, got %s", cfg.Timeout())
 	}
 }
 
@@ -76,5 +82,11 @@ func TestConfig_Validate(t *testing.T) {
 	cfg.MaxContextTokens = 50
 	if err := cfg.Validate(); err == nil {
 		t.Errorf("expected error for max context tokens < 100")
+	}
+
+	cfg = DefaultConfig()
+	cfg.TimeoutSeconds = 0
+	if err := cfg.Validate(); err == nil {
+		t.Errorf("expected error for timeout 0")
 	}
 }

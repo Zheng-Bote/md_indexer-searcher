@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"time"
 )
 
 // Config encapsulates configuration parameters for md-ai.
@@ -18,6 +19,7 @@ type Config struct {
 	MaxTokens        int     `json:"max_tokens" yaml:"max_tokens"`
 	MaxContextTokens int     `json:"max_context_tokens" yaml:"max_context_tokens"`
 	GraphDepth       int     `json:"graph_depth" yaml:"graph_depth"`
+	TimeoutSeconds   int     `json:"timeout_seconds" yaml:"timeout_seconds"`
 	JSONOutput       bool    `json:"json_output" yaml:"json_output"`
 }
 
@@ -31,6 +33,7 @@ func DefaultConfig() *Config {
 		MaxTokens:        2048,
 		MaxContextTokens: 16000,
 		GraphDepth:       3,
+		TimeoutSeconds:   600,
 		JSONOutput:       false,
 	}
 }
@@ -66,6 +69,11 @@ func (c *Config) LoadFromEnv() {
 			c.GraphDepth = i
 		}
 	}
+	if val := os.Getenv("MD_AI_TIMEOUT"); val != "" {
+		if i, err := strconv.Atoi(val); err == nil {
+			c.TimeoutSeconds = i
+		}
+	}
 	if val := os.Getenv("MD_AI_JSON"); val != "" {
 		c.JSONOutput = val == "true" || val == "1"
 	}
@@ -88,5 +96,13 @@ func (c *Config) Validate() error {
 	if c.MaxContextTokens < 100 {
 		return fmt.Errorf("max context tokens must be at least 100")
 	}
+	if c.TimeoutSeconds < 1 {
+		return fmt.Errorf("timeout must be at least 1 second")
+	}
 	return nil
+}
+
+// Timeout returns the LLM request timeout as a duration.
+func (c *Config) Timeout() time.Duration {
+	return time.Duration(c.TimeoutSeconds) * time.Second
 }

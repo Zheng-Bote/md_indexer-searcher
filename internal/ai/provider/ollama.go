@@ -44,6 +44,7 @@ type ollamaGenerateRequest struct {
 	Prompt  string                 `json:"prompt"`
 	System  string                 `json:"system,omitempty"`
 	Stream  bool                   `json:"stream"`
+	Think   bool                   `json:"think"`
 	Options map[string]interface{} `json:"options,omitempty"`
 }
 
@@ -67,12 +68,19 @@ func (p *OllamaProvider) Generate(ctx context.Context, req *model.GenerateReques
 	if req.MaxTokens > 0 {
 		options["num_predict"] = req.MaxTokens
 	}
+	if req.ContextWindow > 0 {
+		// Ollama silently truncates prompts longer than num_ctx, dropping the knowledge context.
+		options["num_ctx"] = req.ContextWindow
+	}
 
+	// Think is disabled for thinking models (e.g. qwen3); otherwise the hidden thinking phase
+	// consumes the num_predict budget and can leave the answer empty. Non-thinking models accept it.
 	body := ollamaGenerateRequest{
 		Model:   req.Model,
 		Prompt:  req.Prompt,
 		System:  req.System,
 		Stream:  false,
+		Think:   false,
 		Options: options,
 	}
 

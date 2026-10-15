@@ -75,11 +75,12 @@ func (a *Assistant) Ask(ctx context.Context, question string, session *conversat
 
 	// 6. Generate answer via LLM Provider
 	req := &model.GenerateRequest{
-		Model:       a.cfg.Model,
-		Prompt:      userPrompt,
-		System:      sysPrompt,
-		Temperature: a.cfg.Temperature,
-		MaxTokens:   a.cfg.MaxTokens,
+		Model:         a.cfg.Model,
+		Prompt:        userPrompt,
+		System:        sysPrompt,
+		Temperature:   a.cfg.Temperature,
+		MaxTokens:     a.cfg.MaxTokens,
+		ContextWindow: contextWindow(sysPrompt, userPrompt, a.cfg.MaxTokens),
 	}
 
 	genResp, err := a.provider.Generate(ctx, req)
@@ -119,4 +120,14 @@ func (a *Assistant) Ask(ctx context.Context, question string, session *conversat
 	}
 
 	return answer, nil
+}
+
+// contextWindowStep rounds the window up so that small prompt size changes do not force Ollama to reload the model.
+const contextWindowStep = 8192
+
+// contextWindow sizes the model window for the prompt plus the generated answer.
+// It assumes ~3 bytes per token, which is conservative for mixed German/English Markdown and code.
+func contextWindow(systemPrompt, userPrompt string, maxTokens int) int {
+	needed := (len(systemPrompt)+len(userPrompt))/3 + maxTokens
+	return (needed/contextWindowStep + 1) * contextWindowStep
 }
