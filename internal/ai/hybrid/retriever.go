@@ -7,13 +7,17 @@ package hybrid
 import (
 	"context"
 	"database/sql"
-	"strings"
+	"regexp"
 
 	"github.com/md-indexer/internal/ai/model"
 )
 
-// maxGraphSeeds limits how many top documents start the graph expansion.
-const maxGraphSeeds = 5
+const (
+	// maxGraphSeeds limits how many top documents start the graph expansion.
+	maxGraphSeeds = 5
+	// maxChains limits the reasoning chains passed to the context builder.
+	maxChains = 5
+)
 
 // Retriever plans retrieval per query, collects candidates from all planned sources and fuses them.
 type Retriever struct {
@@ -87,16 +91,20 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, intent model.Int
 		res.Relations = append(res.Relations, er.Relations...)
 	}
 
+	var chains map[string]model.ReasoningChain
 	if plan.UseGraph && plan.GraphDepth > 0 {
 		seeds := topDocuments(maxGraphSeeds, lists[SourceEntity], lists[SourceFTS], lists[SourceVector])
-		cands, err := r.graph.Expand(ctx, seeds, plan.GraphDepth, r.topK)
+		gr, err := r.graph.Expand(ctx, seeds, plan.GraphDepth, r.topK)
 		if err != nil {
 			return nil, err
 		}
-		lists[SourceGraph] = cands
+		lists[SourceGraph] = gr.Candidates
+		chains = gr.Chains
 	}
 
-	for _, c := range Fuse(lists, r.weights, plan.MaxResults) {
+	fused := Fuse(lists, r.weights, plan.MaxResults)
+	res.Chains = selectChains(fused, chains, maxChains)
+	for _, c := range fused {
 		res.Snippets = append(res.Snippets, model.DocumentSnippet{
 			DocumentPath: c.Path,
 			Title:        c.Title,
@@ -107,6 +115,51 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, intent model.Int
 		})
 	}
 	return res, nil
+}
+
+// selectChains returns the reasoning chains of fused documents in fused order, one per document.
+// A chain that is a prefix of another selected chain adds no information and is dropped.
+func selectChains(fused []Candidate, chains map[string]model.ReasoningChain, n int) []model.ReasoningChain {
+	var all []model.ReasoningChain
+	seen := make(map[string]bool)
+	for _, c := range fused {
+		chain, ok := chains[c.DocumentID]
+		if !ok || len(chain.Steps) == 0 || seen[c.DocumentID] {
+			continue
+		}
+		seen[c.DocumentID] = true
+		all = append(all, chain)
+	}
+
+	var out []model.ReasoningChain
+	for i, c := range all {
+		if len(out) >= n {
+			break
+		}
+		redundant := false
+		for j, other := range all {
+			if i != j && isPrefix(c.Steps, other.Steps) && (len(c.Steps) < len(other.Steps) || j < i) {
+				redundant = true
+				break
+			}
+		}
+		if !redundant {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+func isPrefix(prefix, steps []model.ReasoningStep) bool {
+	if len(prefix) > len(steps) {
+		return false
+	}
+	for i := range prefix {
+		if prefix[i] != steps[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // topDocuments returns up to n distinct document IDs in list order.
@@ -127,9 +180,12 @@ func topDocuments(n int, lists ...[]Candidate) []string {
 	return ids
 }
 
+// adrPattern matches "ADR" as a word (ADR-003, docs/adr/...), not inside words like "Badradio".
+var adrPattern = regexp.MustCompile(`(?i)(^|[^\pL\pN])adr([^\pL]|$)`)
+
 // strategy keeps the classic retriever's "adr" marker so the context builder can prioritise decision records.
 func strategy(c Candidate) string {
-	if strings.Contains(strings.ToLower(c.Path), "adr") || strings.Contains(strings.ToLower(c.Title), "adr") {
+	if adrPattern.MatchString(c.Path) || adrPattern.MatchString(c.Title) {
 		return "adr"
 	}
 	return c.SourceType

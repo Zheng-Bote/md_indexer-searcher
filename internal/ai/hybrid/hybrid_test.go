@@ -125,3 +125,39 @@ func TestFuse_LimitsSectionsPerDocument(t *testing.T) {
 		t.Errorf("expected maxResults 2, got %d", len(got))
 	}
 }
+
+func TestStrategy_ADRWordOnly(t *testing.T) {
+	tests := map[string]string{
+		"docs/adr/001-sqlite.md":      "adr",
+		"vault/ADR-003 Encryption.md": "adr",
+		"vault/ADR003.md":             "adr",
+		"vault/Badradio.md":           SourceFTS,
+		"vault/Adresse ändern.md":     SourceFTS,
+	}
+	for path, want := range tests {
+		if got := strategy(Candidate{Path: path, SourceType: SourceFTS}); got != want {
+			t.Errorf("strategy(%q) = %s, want %s", path, got, want)
+		}
+	}
+}
+
+func TestSelectChains_DropsPrefixes(t *testing.T) {
+	ab := model.ReasoningStep{Source: "A", Relation: "USES", Target: "B"}
+	bc := model.ReasoningStep{Source: "B", Relation: "USES", Target: "C"}
+	ad := model.ReasoningStep{Source: "A", Relation: "CONTAINS", Target: "D"}
+	chains := map[string]model.ReasoningChain{
+		"b": {Steps: []model.ReasoningStep{ab}},
+		"c": {Steps: []model.ReasoningStep{ab, bc}},
+		"d": {Steps: []model.ReasoningStep{ad}},
+	}
+	fused := []Candidate{{DocumentID: "b"}, {DocumentID: "c"}, {DocumentID: "x"}, {DocumentID: "d"}}
+
+	got := selectChains(fused, chains, 5)
+	want := []model.ReasoningChain{chains["c"], chains["d"]}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("selectChains() = %+v, want %+v", got, want)
+	}
+	if got := selectChains(fused, chains, 1); len(got) != 1 {
+		t.Errorf("expected limit 1, got %d", len(got))
+	}
+}

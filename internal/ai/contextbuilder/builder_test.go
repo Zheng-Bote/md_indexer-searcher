@@ -67,3 +67,21 @@ func DocumentSnippetStub() []model.DocumentSnippet {
 		{DocumentPath: "docs/fts.md", Title: "FTS", Strategy: "fts", Content: "Search match"},
 	}
 }
+
+func TestContextBuilder_ReasoningChains(t *testing.T) {
+	res := &model.RetrievalResult{
+		Chains: []model.ReasoningChain{{Steps: []model.ReasoningStep{
+			{Source: "Transformation Engine", Relation: "USES", Target: "Encryption"},
+			{Source: "Encryption", Relation: "DEPENDS_ON", Target: "KMS"},
+		}}},
+		Snippets: []model.DocumentSnippet{{DocumentPath: "a.md", Content: "x", Strategy: "fts"}},
+	}
+	blocks := NewContextBuilder(1000).BuildContext(res)
+	if len(blocks) != 2 || blocks[0].Priority != 2 || blocks[0].Source != "knowledge-graph" {
+		t.Fatalf("expected chain block first with priority 2, got %+v", blocks)
+	}
+	want := "Reasoning chain:\n- [Transformation Engine] --(USES)--> [Encryption]\n- [Encryption] --(DEPENDS_ON)--> [KMS]"
+	if blocks[0].Content != want {
+		t.Errorf("unexpected chain content:\n%s", blocks[0].Content)
+	}
+}

@@ -51,6 +51,19 @@ type RetrievalResult struct {
 	Snippets  []DocumentSnippet     `json:"snippets"`
 	Entities  []EntityMatch         `json:"entities"`
 	Relations []EntityRelationMatch `json:"relations"`
+	Chains    []ReasoningChain      `json:"chains,omitempty"`
+}
+
+// ReasoningStep is one directed edge of a reasoning chain, e.g. "Transformation Engine" USES "Encryption".
+type ReasoningStep struct {
+	Source   string `json:"source"`
+	Relation string `json:"relation"`
+	Target   string `json:"target"`
+}
+
+// ReasoningChain is a multi-hop path through the knowledge graph from a retrieved document to a related one.
+type ReasoningChain struct {
+	Steps []ReasoningStep `json:"steps"`
 }
 
 // ContextBlock represents a prioritized and formatted piece of evidence for prompt assembly.
