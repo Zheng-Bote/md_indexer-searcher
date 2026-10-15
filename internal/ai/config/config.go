@@ -28,6 +28,13 @@ type Config struct {
 	FusionFTSWeight    float64 `json:"fusion_fts_weight" yaml:"fusion_fts_weight"`
 	FusionGraphWeight  float64 `json:"fusion_graph_weight" yaml:"fusion_graph_weight"`
 	FusionEntityWeight float64 `json:"fusion_entity_weight" yaml:"fusion_entity_weight"`
+
+	// Vector retrieval uses section embeddings written by the indexer (-embed-model) with the same model.
+	EnableVectors      bool    `json:"enable_vectors" yaml:"enable_vectors"`
+	EmbeddingModel     string  `json:"embedding_model" yaml:"embedding_model"`
+	TopKVector         int     `json:"top_k_vector" yaml:"top_k_vector"`
+	MinVectorScore     float64 `json:"min_vector_score" yaml:"min_vector_score"`
+	FusionVectorWeight float64 `json:"fusion_vector_weight" yaml:"fusion_vector_weight"`
 }
 
 // Retriever implementations.
@@ -54,6 +61,12 @@ func DefaultConfig() *Config {
 		FusionFTSWeight:    0.35,
 		FusionGraphWeight:  0.20,
 		FusionEntityWeight: 0.10,
+
+		EnableVectors:      true,
+		EmbeddingModel:     "bge-m3",
+		TopKVector:         25,
+		MinVectorScore:     0.55,
+		FusionVectorWeight: 0.35,
 	}
 }
 
@@ -96,6 +109,12 @@ func (c *Config) LoadFromEnv() {
 	if val := os.Getenv("MD_AI_RETRIEVER"); val != "" {
 		c.Retriever = val
 	}
+	if val := os.Getenv("MD_AI_ENABLE_VECTORS"); val != "" {
+		c.EnableVectors = val == "true" || val == "1"
+	}
+	if val := os.Getenv("MD_AI_EMBEDDING_MODEL"); val != "" {
+		c.EmbeddingModel = val
+	}
 	if val := os.Getenv("MD_AI_JSON"); val != "" {
 		c.JSONOutput = val == "true" || val == "1"
 	}
@@ -120,6 +139,9 @@ func (c *Config) Validate() error {
 	}
 	if c.TimeoutSeconds < 1 {
 		return fmt.Errorf("timeout must be at least 1 second")
+	}
+	if c.EnableVectors && c.EmbeddingModel == "" {
+		return fmt.Errorf("embedding model must not be empty when vectors are enabled")
 	}
 	if c.Retriever != RetrieverHybrid && c.Retriever != RetrieverClassic {
 		return fmt.Errorf("retriever must be %q or %q, got %q", RetrieverHybrid, RetrieverClassic, c.Retriever)

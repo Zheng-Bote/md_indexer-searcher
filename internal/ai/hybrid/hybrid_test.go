@@ -39,19 +39,20 @@ func TestFTSMatch_QuotesTerms(t *testing.T) {
 func TestPlanner_Plan(t *testing.T) {
 	p := NewPlanner(3)
 	tests := []struct {
-		query     string
-		intent    model.Intent
-		wantType  QueryType
-		wantGraph bool
-		wantDepth int
+		query       string
+		intent      model.Intent
+		wantType    QueryType
+		wantGraph   bool
+		wantDepth   int
+		wantVectors bool
 	}{
-		{"Was ist ADR-003?", model.IntentADR, QueryFact, false, 0},
-		{"Was ist der Encryption Service?", model.IntentEntity, QueryEntity, false, 0},
-		{"Welche Komponenten verwenden Encryption?", model.IntentImpact, QueryImpact, true, 3},
+		{"Was ist ADR-003?", model.IntentADR, QueryFact, false, 0, true},
+		{"Was ist der Encryption Service?", model.IntentEntity, QueryEntity, false, 0, true},
+		{"Welche Komponenten verwenden Encryption?", model.IntentImpact, QueryImpact, true, 3, false},
 		// Architecture depth 4 is capped by maxGraphDepth 3.
-		{"Wie funktioniert die Ingestion Pipeline?", model.IntentSearch, QueryArchitecture, true, 3},
-		{"How does the indexer work?", model.IntentSearch, QueryArchitecture, true, 3},
-		{"raspberry pi sensor", model.IntentSearch, QueryExploration, true, 1},
+		{"Wie funktioniert die Ingestion Pipeline?", model.IntentSearch, QueryArchitecture, true, 3, true},
+		{"How does the indexer work?", model.IntentSearch, QueryArchitecture, true, 3, true},
+		{"raspberry pi sensor", model.IntentSearch, QueryExploration, true, 1, true},
 	}
 	for _, tt := range tests {
 		plan := p.Plan(tt.query, tt.intent)
@@ -61,8 +62,8 @@ func TestPlanner_Plan(t *testing.T) {
 		if !plan.UseFTS {
 			t.Errorf("%q: FTS must always be enabled", tt.query)
 		}
-		if plan.UseVectors {
-			t.Errorf("%q: vectors must stay disabled until embeddings exist", tt.query)
+		if plan.UseVectors != tt.wantVectors {
+			t.Errorf("%q: vectors = %v, want %v", tt.query, plan.UseVectors, tt.wantVectors)
 		}
 		if plan.UseGraph != tt.wantGraph || plan.GraphDepth != tt.wantDepth {
 			t.Errorf("%q: graph = %v/%d, want %v/%d", tt.query, plan.UseGraph, plan.GraphDepth, tt.wantGraph, tt.wantDepth)

@@ -17,25 +17,31 @@ const maxGraphSeeds = 5
 
 // Retriever plans retrieval per query, collects candidates from all planned sources and fuses them.
 type Retriever struct {
-	planner  *Planner
-	fts      FTSRetriever
-	entities EntityRetriever
-	graph    GraphRetriever
-	weights  Weights
-	topK     int
+	planner    *Planner
+	fts        FTSRetriever
+	entities   EntityRetriever
+	graph      GraphRetriever
+	vectors    VectorRetriever
+	weights    Weights
+	topK       int
+	topKVector int
 }
 
-// NewRetriever wires a Retriever from its components; topK limits each source's candidate list.
-func NewRetriever(planner *Planner, fts FTSRetriever, entities EntityRetriever, graph GraphRetriever, weights Weights, topK int) *Retriever {
+// NewRetriever wires a Retriever from its components. vectors may be nil to disable vector retrieval.
+// topK limits the FTS and graph candidate lists, topKVector the vector list.
+func NewRetriever(planner *Planner, fts FTSRetriever, entities EntityRetriever, graph GraphRetriever, vectors VectorRetriever, weights Weights, topK, topKVector int) *Retriever {
 	if topK < 1 {
 		topK = 25
 	}
-	return &Retriever{planner: planner, fts: fts, entities: entities, graph: graph, weights: weights, topK: topK}
+	if topKVector < 1 {
+		topKVector = 25
+	}
+	return &Retriever{planner: planner, fts: fts, entities: entities, graph: graph, vectors: vectors, weights: weights, topK: topK, topKVector: topKVector}
 }
 
-// NewSQLiteRetriever creates a Retriever backed by knowledge.db.
-func NewSQLiteRetriever(db *sql.DB, maxGraphDepth int, weights Weights, topK int) *Retriever {
-	return NewRetriever(NewPlanner(maxGraphDepth), NewSQLiteFTS(db), NewSQLiteEntities(db), NewSQLiteGraph(db), weights, topK)
+// NewSQLiteRetriever creates a Retriever backed by knowledge.db; vectors may be nil.
+func NewSQLiteRetriever(db *sql.DB, maxGraphDepth int, vectors VectorRetriever, weights Weights, topK, topKVector int) *Retriever {
+	return NewRetriever(NewPlanner(maxGraphDepth), NewSQLiteFTS(db), NewSQLiteEntities(db), NewSQLiteGraph(db), vectors, weights, topK, topKVector)
 }
 
 // Retrieve returns fused evidence for the query in the md-ai retrieval model.
@@ -63,6 +69,14 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, intent model.Int
 		lists[SourceFTS] = cands
 	}
 
+	if plan.UseVectors && r.vectors != nil {
+		cands, err := r.vectors.Search(ctx, query, r.topKVector)
+		if err != nil {
+			return nil, err
+		}
+		lists[SourceVector] = cands
+	}
+
 	if plan.UseEntities {
 		er, err := r.entities.Find(ctx, query)
 		if err != nil {
@@ -74,7 +88,7 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, intent model.Int
 	}
 
 	if plan.UseGraph && plan.GraphDepth > 0 {
-		seeds := topDocuments(maxGraphSeeds, lists[SourceEntity], lists[SourceFTS])
+		seeds := topDocuments(maxGraphSeeds, lists[SourceEntity], lists[SourceFTS], lists[SourceVector])
 		cands, err := r.graph.Expand(ctx, seeds, plan.GraphDepth, r.topK)
 		if err != nil {
 			return nil, err

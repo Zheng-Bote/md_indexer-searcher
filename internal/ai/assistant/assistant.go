@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/md-indexer/internal/ai/citations"
@@ -20,6 +21,7 @@ import (
 	"github.com/md-indexer/internal/ai/prompt"
 	"github.com/md-indexer/internal/ai/provider"
 	"github.com/md-indexer/internal/ai/retriever"
+	"github.com/md-indexer/internal/embedding"
 )
 
 // Retriever fetches evidence for a classified question.
@@ -32,8 +34,13 @@ func NewRetriever(db *sql.DB, cfg *config.Config) Retriever {
 	if cfg.Retriever == config.RetrieverClassic {
 		return retriever.NewRetriever(db, cfg.GraphDepth)
 	}
-	weights := hybrid.Weights{FTS: cfg.FusionFTSWeight, Graph: cfg.FusionGraphWeight, Entity: cfg.FusionEntityWeight}
-	return hybrid.NewSQLiteRetriever(db, cfg.GraphDepth, weights, cfg.TopKFTS)
+	var vectors hybrid.VectorRetriever
+	if cfg.EnableVectors {
+		embedder := embedding.NewOllamaEmbedder(cfg.OllamaHost, cfg.EmbeddingModel, &http.Client{Timeout: cfg.Timeout()})
+		vectors = hybrid.NewSQLiteVectors(db, embedder, cfg.MinVectorScore)
+	}
+	weights := hybrid.Weights{FTS: cfg.FusionFTSWeight, Vector: cfg.FusionVectorWeight, Graph: cfg.FusionGraphWeight, Entity: cfg.FusionEntityWeight}
+	return hybrid.NewSQLiteRetriever(db, cfg.GraphDepth, vectors, weights, cfg.TopKFTS, cfg.TopKVector)
 }
 
 // Assistant orchestrates all AI subcomponents into a coherent Q&A pipeline.

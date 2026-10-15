@@ -28,12 +28,16 @@ func TestConfig_LoadFromEnv(t *testing.T) {
 	os.Setenv("MD_AI_GRAPH_DEPTH", "5")
 	os.Setenv("MD_AI_JSON", "true")
 	os.Setenv("MD_AI_TIMEOUT", "900")
+	os.Setenv("MD_AI_ENABLE_VECTORS", "false")
+	os.Setenv("MD_AI_EMBEDDING_MODEL", "nomic-embed-text")
 	defer func() {
 		os.Unsetenv("MD_AI_MODEL")
 		os.Unsetenv("MD_AI_TEMPERATURE")
 		os.Unsetenv("MD_AI_GRAPH_DEPTH")
 		os.Unsetenv("MD_AI_JSON")
 		os.Unsetenv("MD_AI_TIMEOUT")
+		os.Unsetenv("MD_AI_ENABLE_VECTORS")
+		os.Unsetenv("MD_AI_EMBEDDING_MODEL")
 	}()
 
 	cfg := DefaultConfig()
@@ -53,6 +57,9 @@ func TestConfig_LoadFromEnv(t *testing.T) {
 	}
 	if cfg.Timeout() != 900*time.Second {
 		t.Errorf("expected timeout 900s, got %s", cfg.Timeout())
+	}
+	if cfg.EnableVectors || cfg.EmbeddingModel != "nomic-embed-text" {
+		t.Errorf("expected vectors disabled with nomic-embed-text, got %v/%s", cfg.EnableVectors, cfg.EmbeddingModel)
 	}
 }
 
@@ -91,6 +98,12 @@ func TestConfig_Validate(t *testing.T) {
 	cfg.TimeoutSeconds = 0
 	if err := cfg.Validate(); err == nil {
 		t.Errorf("expected error for timeout 0")
+	}
+
+	cfg = DefaultConfig()
+	cfg.EmbeddingModel = ""
+	if err := cfg.Validate(); err == nil {
+		t.Errorf("expected error for empty embedding model with vectors enabled")
 	}
 
 	cfg = DefaultConfig()
