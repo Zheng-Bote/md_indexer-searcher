@@ -52,6 +52,22 @@ func (b *ContextBuilder) BuildContext(res *model.RetrievalResult) []model.Contex
 		})
 	}
 
+	// Reasoning chains (Priority 2): explicit multi-hop paths through the knowledge graph.
+	for _, c := range res.Chains {
+		var sb strings.Builder
+		sb.WriteString("Reasoning chain:")
+		for _, s := range c.Steps {
+			sb.WriteString(fmt.Sprintf("\n- [%s] --(%s)--> [%s]", s.Source, s.Relation, s.Target))
+		}
+		content := sb.String()
+		blocks = append(blocks, model.ContextBlock{
+			Priority: 2,
+			Source:   "knowledge-graph",
+			Content:  content,
+			Tokens:   estimateTokens(content),
+		})
+	}
+
 	// 3. Document Snippets (Priority 3 to 6 based on strategy)
 	for _, s := range res.Snippets {
 		prio := 6 // Default FTS
