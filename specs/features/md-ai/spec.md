@@ -7,7 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 
 ## 1. Objective & Overview
 `md-ai` is an intelligent, local, grounded AI assistant and Retrieval-Augmented Generation (RAG) CLI service that queries a Markdown knowledge base materialized in SQLite (`knowledge.db`).
-It provides grounded answers to user questions, supports deep graph-aware context retrieval, enforces strict anti-hallucination policies, formats source citations, identifies knowledge gaps, and supports local LLMs via Ollama (specifically tested with `gemma3:1b` and other supported models) as well as extensible cloud LLM providers.
+It provides grounded answers to user questions, supports deep graph-aware context retrieval, enforces strict anti-hallucination policies, formats source citations, identifies knowledge gaps, and supports local LLMs via Ollama (default `qwen3:14b`, also tested with `gemma3:12b`) as well as extensible cloud LLM providers.
 
 ## 2. Key Constraints & Guarantees
 - **Strict Read-Only:** Markdown files remain strictly immutable. Knowledge is sourced strictly from `knowledge.db`.
@@ -18,7 +18,7 @@ It provides grounded answers to user questions, supports deep graph-aware contex
 ## 3. User Scenarios & Capabilities
 
 ### User Story 1 - Single Question CLI Execution
-As a developer or researcher, I want to query my knowledge base from the CLI (`md-ai ask "What decisions were made regarding authentication?"`) using a local model (`gemma3:1b`) and get an answer grounded strictly in my indexed notes with clear citations.
+As a developer or researcher, I want to query my knowledge base from the CLI (`md-ai ask "What decisions were made regarding authentication?"`) using a local model (`qwen3:14b`) and get an answer grounded strictly in my indexed notes with clear citations.
 
 ### User Story 2 - Interactive Chat Session
 As a user exploring my vault, I want to enter an interactive REPL mode (`md-ai chat`) to converse with my knowledge base across multiple turns, preserving conversation context and asking follow-up questions.
@@ -60,7 +60,7 @@ When queried on topics not covered in the knowledge base, the assistant must exp
   ```
 - Ollama Provider:
   - Connects to Ollama REST API (default `http://localhost:11434/api/generate` or `/api/chat`).
-  - Supports configurable models (default `gemma3:1b`, compatible with `llama3`, `qwen3`, etc.).
+  - Supports configurable models (default `qwen3:14b`, compatible with `gemma3`, `llama3`, etc.).
   - Configurable timeouts and error handling.
 - Mock Provider for unit and integration testing without running a live Ollama instance.
 
@@ -92,7 +92,7 @@ When queried on topics not covered in the knowledge base, the assistant must exp
     "sources": [{"path": "...", "section": "...", "snippet": "..."}],
     "gaps": ["..."],
     "intent": "ADR",
-    "model": "gemma3:1b"
+    "model": "qwen3:14b"
   }
   ```
 

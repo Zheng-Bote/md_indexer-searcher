@@ -139,7 +139,7 @@ paths:
     post:
       summary: Grounded AI Question Answering (RAG)
       description: >
-        Asks a question to the local grounded AI assistant (powered by Ollama e.g. gemma3:1b).
+        Asks a question to the local grounded AI assistant (powered by Ollama e.g. qwen3:14b).
         Retrieves context via FTS5, entities, and recursive BFS graph neighbors with anti-hallucination guarantees.
       requestBody:
         required: true
@@ -214,7 +214,7 @@ components:
               example: "adr"
             model:
               type: string
-              example: "gemma3:1b"
+              example: "qwen3:14b"
             sources:
               type: array
               items:

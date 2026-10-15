@@ -28,7 +28,7 @@ cmd/
 internal/
 └── ai/
     ├── config/
-    │   └── config.go           # CLI / YAML / Env configuration (default model: gemma3:1b)
+    │   └── config.go           # CLI / YAML / Env configuration (default model: qwen3:14b)
     ├── model/
     │   └── types.go            # Data contracts (Intent, RetrievalResult, ContextBlock, Answer)
     ├── classifier/
@@ -82,7 +82,7 @@ internal/
 4. Prompt Engine (Injects strict anti-hallucination system prompt, citations format, and retrieved context)
        │
        ▼
-5. LLM Provider (Calls local Ollama API - model: gemma3:1b)
+5. LLM Provider (Calls local Ollama API - model: qwen3:14b)
        │
        ▼
 6. Post-Processing (Validates citations, verifies gaps, formats markdown/terminal or JSON output)
@@ -108,7 +108,7 @@ internal/
 ## 5. Ollama Integration Strategy
 
 - **Endpoint:** `POST http://localhost:11434/api/generate` (or `/api/chat`).
-- **Default Model:** `gemma3:1b` (configured and verified on user system).
+- **Default Model:** `qwen3:14b` (configured and verified on user system).
 - **Fallback / Alternative Models:** Easily switched via `--model <name>` or config file (`llama3`, `qwen3`, etc.).
 - **Streaming & Non-Streaming:** Standard non-streaming for scripted/JSON outputs; optional streaming for CLI REPL chat.
 - **Mocking:** `MockProvider` simulates Ollama responses without network dependencies to guarantee fast, deterministic tests (`go test ./internal/ai/...`).

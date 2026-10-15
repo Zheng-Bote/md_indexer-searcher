@@ -11,8 +11,8 @@ import (
 
 func TestDefaultConfig(t *testing.T) {
 	cfg := DefaultConfig()
-	if cfg.Model != "gemma3:1b" {
-		t.Fatalf("expected default model gemma3:1b, got %s", cfg.Model)
+	if cfg.Model != "qwen3:14b" {
+		t.Fatalf("expected default model qwen3:14b, got %s", cfg.Model)
 	}
 	if cfg.Retriever != RetrieverHybrid {
 		t.Fatalf("expected default retriever hybrid, got %s", cfg.Retriever)

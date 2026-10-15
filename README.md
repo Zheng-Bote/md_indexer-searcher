@@ -96,7 +96,7 @@ graph TD
     SearchEngine --> CLI[md-search\nCLI Tool]
     
     DB --> AIAssistant[md-ai\nGrounded AI / RAG]
-    Ollama[Local Ollama\ne.g. gemma3:1b] <--> AIAssistant
+    Ollama[Local Ollama\ne.g. qwen3:14b] <--> AIAssistant
 
     Client[Web / UI Client] --> API
     User[Terminal User] --> CLI
@@ -251,7 +251,7 @@ curl -X POST http://localhost:8081/api/ai/ask \
 
 ### 5. Grounded AI Assistant (`md-ai`)
 
-`md-ai` provides a grounded AI assistant / RAG layer connected to your local Ollama instance (default: `gemma3:1b`) without leaking notes to cloud providers or modifying your markdown files.
+`md-ai` provides a grounded AI assistant / RAG layer connected to your local Ollama instance (default: `qwen3:14b`) without leaking notes to cloud providers or modifying your markdown files.
 
 #### Single-Shot Query (`ask`)
 ```bash
@@ -279,7 +279,7 @@ Sources:
 *Prompt:*
 ```text
 === md-ai Interactive Chat ===
-Model: gemma3:1b | Database: knowledge.db
+Model: qwen3:14b | Database: knowledge.db
 Type 'exit', 'quit', or press Ctrl+C to stop.
 
 You > What is the role of TokenSigner?
