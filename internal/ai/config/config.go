@@ -21,7 +21,20 @@ type Config struct {
 	GraphDepth       int     `json:"graph_depth" yaml:"graph_depth"`
 	TimeoutSeconds   int     `json:"timeout_seconds" yaml:"timeout_seconds"`
 	JSONOutput       bool    `json:"json_output" yaml:"json_output"`
+
+	// Retriever selects the retrieval implementation: RetrieverHybrid or RetrieverClassic.
+	Retriever          string  `json:"retriever" yaml:"retriever"`
+	TopKFTS            int     `json:"top_k_fts" yaml:"top_k_fts"`
+	FusionFTSWeight    float64 `json:"fusion_fts_weight" yaml:"fusion_fts_weight"`
+	FusionGraphWeight  float64 `json:"fusion_graph_weight" yaml:"fusion_graph_weight"`
+	FusionEntityWeight float64 `json:"fusion_entity_weight" yaml:"fusion_entity_weight"`
 }
+
+// Retriever implementations.
+const (
+	RetrieverHybrid  = "hybrid"
+	RetrieverClassic = "classic"
+)
 
 // DefaultConfig returns the default configuration.
 func DefaultConfig() *Config {
@@ -35,6 +48,12 @@ func DefaultConfig() *Config {
 		GraphDepth:       3,
 		TimeoutSeconds:   600,
 		JSONOutput:       false,
+
+		Retriever:          RetrieverHybrid,
+		TopKFTS:            25,
+		FusionFTSWeight:    0.35,
+		FusionGraphWeight:  0.20,
+		FusionEntityWeight: 0.10,
 	}
 }
 
@@ -74,6 +93,9 @@ func (c *Config) LoadFromEnv() {
 			c.TimeoutSeconds = i
 		}
 	}
+	if val := os.Getenv("MD_AI_RETRIEVER"); val != "" {
+		c.Retriever = val
+	}
 	if val := os.Getenv("MD_AI_JSON"); val != "" {
 		c.JSONOutput = val == "true" || val == "1"
 	}
@@ -98,6 +120,9 @@ func (c *Config) Validate() error {
 	}
 	if c.TimeoutSeconds < 1 {
 		return fmt.Errorf("timeout must be at least 1 second")
+	}
+	if c.Retriever != RetrieverHybrid && c.Retriever != RetrieverClassic {
+		return fmt.Errorf("retriever must be %q or %q, got %q", RetrieverHybrid, RetrieverClassic, c.Retriever)
 	}
 	return nil
 }

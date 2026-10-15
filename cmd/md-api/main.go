@@ -16,7 +16,6 @@ import (
 	"github.com/md-indexer/internal/ai/config"
 	"github.com/md-indexer/internal/ai/contextbuilder"
 	"github.com/md-indexer/internal/ai/provider"
-	"github.com/md-indexer/internal/ai/retriever"
 	"github.com/md-indexer/internal/api/rest"
 	"github.com/md-indexer/internal/repository"
 	"github.com/md-indexer/internal/search"
@@ -49,7 +48,7 @@ func main() {
 		aiCfg.OllamaHost = *ollamaHost
 		aiCfg.Model = *modelName
 		clf := classifier.NewRuleClassifier()
-		ret := retriever.NewRetriever(repo.GetDB(), aiCfg.GraphDepth)
+		ret := assistant.NewRetriever(repo.GetDB(), aiCfg)
 		cb := contextbuilder.NewContextBuilder(aiCfg.MaxContextTokens)
 		prov := provider.NewOllamaProvider(aiCfg.OllamaHost, &http.Client{Timeout: aiCfg.Timeout()})
 		asst := assistant.NewAssistant(aiCfg, clf, ret, cb, prov)

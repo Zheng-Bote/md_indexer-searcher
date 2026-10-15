@@ -22,7 +22,6 @@ import (
 	"github.com/md-indexer/internal/ai/conversation"
 	"github.com/md-indexer/internal/ai/model"
 	"github.com/md-indexer/internal/ai/provider"
-	"github.com/md-indexer/internal/ai/retriever"
 	_ "modernc.org/sqlite"
 )
 
@@ -46,6 +45,7 @@ func init() {
 	rootCmd.PersistentFlags().IntVar(&cfg.MaxTokens, "max-tokens", cfg.MaxTokens, "Max generated tokens")
 	rootCmd.PersistentFlags().IntVar(&cfg.MaxContextTokens, "max-context-tokens", cfg.MaxContextTokens, "Max context token budget")
 	rootCmd.PersistentFlags().IntVar(&cfg.GraphDepth, "graph-depth", cfg.GraphDepth, "BFS graph traversal depth")
+	rootCmd.PersistentFlags().StringVar(&cfg.Retriever, "retriever", cfg.Retriever, "Retrieval implementation: hybrid or classic")
 	rootCmd.PersistentFlags().IntVar(&cfg.TimeoutSeconds, "timeout", cfg.TimeoutSeconds, "LLM request timeout in seconds")
 	rootCmd.PersistentFlags().BoolVar(&cfg.JSONOutput, "json", cfg.JSONOutput, "Output response in JSON format")
 
@@ -67,7 +67,7 @@ func initAssistant() (*assistant.Assistant, *sql.DB, error) {
 	}
 
 	clf := classifier.NewRuleClassifier()
-	ret := retriever.NewRetriever(db, cfg.GraphDepth)
+	ret := assistant.NewRetriever(db, cfg)
 	cb := contextbuilder.NewContextBuilder(cfg.MaxContextTokens)
 	prov := provider.NewOllamaProvider(cfg.OllamaHost, &http.Client{Timeout: cfg.Timeout()})
 
