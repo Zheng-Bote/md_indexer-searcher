@@ -41,7 +41,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		DBPath:           "knowledge.db",
 		OllamaHost:       "http://localhost:11434",
-		Model:            "gemma3:1b",
+		Model:            "qwen3:14b",
 		Temperature:      0.2,
 		MaxTokens:        2048,
 		MaxContextTokens: 16000,

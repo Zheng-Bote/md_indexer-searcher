@@ -40,7 +40,7 @@ func init() {
 
 	rootCmd.PersistentFlags().StringVar(&cfg.DBPath, "db", cfg.DBPath, "Path to SQLite knowledge database")
 	rootCmd.PersistentFlags().StringVar(&cfg.OllamaHost, "ollama-host", cfg.OllamaHost, "Ollama API host URL")
-	rootCmd.PersistentFlags().StringVarP(&cfg.Model, "model", "m", cfg.Model, "LLM model name (default: gemma3:1b)")
+	rootCmd.PersistentFlags().StringVarP(&cfg.Model, "model", "m", cfg.Model, "LLM model name")
 	rootCmd.PersistentFlags().Float64Var(&cfg.Temperature, "temperature", cfg.Temperature, "Generation temperature")
 	rootCmd.PersistentFlags().IntVar(&cfg.MaxTokens, "max-tokens", cfg.MaxTokens, "Max generated tokens")
 	rootCmd.PersistentFlags().IntVar(&cfg.MaxContextTokens, "max-context-tokens", cfg.MaxContextTokens, "Max context token budget")

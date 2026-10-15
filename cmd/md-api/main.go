@@ -29,7 +29,7 @@ func main() {
 	port := flag.String("port", "8081", "HTTP server port")
 	aiEnabled := flag.Bool("ai", false, "Enable AI assistant endpoint (/api/ai/ask)")
 	ollamaHost := flag.String("ollama-host", "http://localhost:11434", "Ollama API host URL")
-	modelName := flag.String("model", "gemma3:1b", "LLM model name for AI endpoint")
+	modelName := flag.String("model", config.DefaultConfig().Model, "LLM model name for AI endpoint")
 	flag.Parse()
 
 	repo, err := repository.NewSQLiteRepository(*dbPath)
