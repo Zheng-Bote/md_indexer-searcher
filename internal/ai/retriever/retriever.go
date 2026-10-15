@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/md-indexer/internal/ai/model"
 )
@@ -65,11 +66,15 @@ func (r *Retriever) retrieveEntitiesAndRelations(ctx context.Context, query stri
 
 	// Entity query
 	entityQuery := `
-		SELECT name, type, document_uri, COALESCE(description, '')
-		FROM entities
-		WHERE name LIKE ? OR ? LIKE '%' || name || '%'
+		SELECT e.name, COALESCE(t.name, e.type_id, ''),
+			COALESCE((SELECT d.path FROM documents d WHERE d.title = e.id LIMIT 1), ''),
+			COALESCE((SELECT p.property_value FROM entity_properties p WHERE p.entity_id = e.id AND p.property_key = 'description' LIMIT 1), '')
+		FROM entities e
+		LEFT JOIN entity_types t ON t.id = e.type_id
+		WHERE e.type_id != 'unresolved' AND (e.name LIKE ? OR ? LIKE '%' || e.name || '%')
 		LIMIT 10;
 	`
+	seen := make(map[string]bool)
 	for _, word := range words {
 		if len(word) < 3 {
 			continue
@@ -82,7 +87,8 @@ func (r *Retriever) retrieveEntitiesAndRelations(ctx context.Context, query stri
 		}
 		for rows.Next() {
 			var e model.EntityMatch
-			if err := rows.Scan(&e.Name, &e.Type, &e.DocumentURI, &e.Description); err == nil {
+			if err := rows.Scan(&e.Name, &e.Type, &e.DocumentURI, &e.Description); err == nil && !seen[e.Name] {
+				seen[e.Name] = true
 				res.Entities = append(res.Entities, e)
 			}
 		}
@@ -92,9 +98,10 @@ func (r *Retriever) retrieveEntitiesAndRelations(ctx context.Context, query stri
 	// Entity Relations
 	if len(res.Entities) > 0 {
 		relQuery := `
-			SELECT source_entity, relation_type, target_entity, document_uri
-			FROM entity_relations
-			WHERE source_entity = ? OR target_entity = ?
+			SELECT r.source_entity_id, r.relation_type, r.target_entity_id,
+				COALESCE((SELECT d.path FROM documents d WHERE d.title = r.source_entity_id LIMIT 1), '')
+			FROM entity_relations r
+			WHERE r.source_entity_id = ? OR r.target_entity_id = ?
 			LIMIT 15;
 		`
 		for _, e := range res.Entities {
@@ -122,13 +129,18 @@ func (r *Retriever) retrieveFTSSnippets(ctx context.Context, query string, res *
 	}
 
 	ftsQuery := `
-		SELECT d.path, d.title, COALESCE(s.heading, ''), COALESCE(s.content, d.body), bm25(documents_fts) AS rank
-		FROM documents_fts f
-		JOIN documents d ON f.rowid = d.id
-		LEFT JOIN sections s ON s.document_id = d.id
-		WHERE documents_fts MATCH ?
-		ORDER BY rank ASC
-		LIMIT 10;
+		WITH top_docs AS (
+			SELECT id, content, bm25(fts_documents) AS rank
+			FROM fts_documents
+			WHERE fts_documents MATCH ?
+			ORDER BY rank ASC
+			LIMIT 10
+		)
+		SELECT d.path, d.title, COALESCE(s.heading, ''), COALESCE(s.content, f.content), f.rank
+		FROM top_docs f
+		JOIN documents d ON d.id = f.id
+		LEFT JOIN sections s ON s.document_id = d.id AND s.content != ''
+		ORDER BY f.rank ASC;
 	`
 	rows, err := r.db.QueryContext(ctx, ftsQuery, sanitized)
 	if err != nil {
@@ -161,10 +173,10 @@ func (r *Retriever) retrieveFTSSnippets(ctx context.Context, query string, res *
 
 func (r *Retriever) fallbackLikeSearch(ctx context.Context, word string, res *model.RetrievalResult) error {
 	likeQuery := `
-		SELECT d.path, d.title, COALESCE(s.heading, ''), COALESCE(s.content, d.body)
+		SELECT d.path, d.title, COALESCE(s.heading, ''), COALESCE(s.content, '')
 		FROM documents d
-		LEFT JOIN sections s ON s.document_id = d.id
-		WHERE d.title LIKE ? OR d.body LIKE ?
+		LEFT JOIN sections s ON s.document_id = d.id AND s.content != ''
+		WHERE d.title LIKE ? OR s.content LIKE ?
 		LIMIT 10;
 	`
 	pattern := "%" + word + "%"
@@ -191,25 +203,35 @@ func (r *Retriever) retrieveGraphNeighbors(ctx context.Context, res *model.Retri
 
 	targetPath := res.Snippets[0].DocumentPath
 	graphQuery := `
-		WITH RECURSIVE graph_cte(source_path, target_path, depth) AS (
-			SELECT source_path, target_path, 1
-			FROM links
-			WHERE source_path = ? OR target_path = ?
-			UNION
-			SELECT l.source_path, l.target_path, g.depth + 1
+		WITH RECURSIVE
+		edges(source_id, target_id) AS (
+			-- links.target_document_id holds the raw wikilink target; resolve it via the document title.
+			SELECT l.source_document_id, d.id
 			FROM links l
-			JOIN graph_cte g ON l.source_path = g.target_path OR l.target_path = g.source_path
-			WHERE g.depth < ?
+			JOIN documents d ON d.title = l.target_document_id
+		),
+		start(id) AS (
+			SELECT id FROM documents WHERE path = ?1
+		),
+		graph_cte(source_id, target_id, depth) AS (
+			SELECT source_id, target_id, 1
+			FROM edges
+			WHERE source_id = (SELECT id FROM start) OR target_id = (SELECT id FROM start)
+			UNION
+			SELECT e.source_id, e.target_id, g.depth + 1
+			FROM edges e
+			JOIN graph_cte g ON e.source_id = g.target_id OR e.target_id = g.source_id
+			WHERE g.depth < ?2
 		)
-		SELECT DISTINCT d.path, d.title, COALESCE(s.heading, ''), COALESCE(s.content, d.body)
+		SELECT DISTINCT d.path, d.title, COALESCE(s.heading, ''), COALESCE(s.content, '')
 		FROM graph_cte g
-		JOIN documents d ON d.path = g.target_path OR d.path = g.source_path
-		LEFT JOIN sections s ON s.document_id = d.id
-		WHERE d.path != ?
+		JOIN documents d ON d.id = g.target_id OR d.id = g.source_id
+		LEFT JOIN sections s ON s.document_id = d.id AND s.content != ''
+		WHERE d.path != ?1
 		LIMIT 10;
 	`
 
-	rows, err := r.db.QueryContext(ctx, graphQuery, targetPath, targetPath, r.graphDepth, targetPath)
+	rows, err := r.db.QueryContext(ctx, graphQuery, targetPath, r.graphDepth)
 	if err != nil {
 		// Graph links may be empty, gracefully ignore
 		return nil
@@ -233,16 +255,13 @@ func (r *Retriever) retrieveGraphNeighbors(ctx context.Context, res *model.Retri
 }
 
 func sanitizeFTSQuery(q string) string {
-	terms := strings.Fields(q)
+	// Split on every non letter/digit rune, mirroring the FTS5 unicode61 tokenizer (e.g. "ADR-003" -> "ADR", "003").
+	terms := strings.FieldsFunc(q, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
 	var clean []string
 	for _, t := range terms {
-		t = strings.Map(func(r rune) rune {
-			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
-				return r
-			}
-			return -1
-		}, t)
-		if len(t) >= 2 {
+		if len([]rune(t)) >= 2 {
 			clean = append(clean, t)
 		}
 	}
