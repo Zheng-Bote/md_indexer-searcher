@@ -4,6 +4,7 @@ package repository
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -235,5 +236,73 @@ func TestSQLiteRepository_CRUD_Search_AndBacklinks(t *testing.T) {
 	deletedDoc, err := repo.GetDocumentByPath(ctx, "/vault/DocA.md")
 	if err != nil || deletedDoc != nil {
 		t.Errorf("Expected nil after removal, got %v", deletedDoc)
+	}
+}
+
+func TestSQLiteRepository_FTSSections(t *testing.T) {
+	ctx := context.Background()
+	repo, err := NewSQLiteRepository(filepath.Join(t.TempDir(), "knowledge.db"))
+	if err != nil {
+		t.Fatalf("Failed to initialize SQLite: %v", err)
+	}
+	defer repo.Close()
+
+	doc := &entities.Document{
+		ID:               "doc-1",
+		Path:             "/vault/Crypto.md",
+		Title:            "Crypto",
+		Tags:             []string{"security"},
+		IsEntity:         true,
+		EntityType:       "Note",
+		EntityName:       "Crypto",
+		EntityProperties: map[string]string{"notebook": "infra"},
+		Sections: []entities.Section{
+			{ID: "doc-1-title", Heading: "Crypto", Level: 1, Content: ""},
+			{ID: "doc-1-aes", Heading: "AES", Level: 2, Content: "AES-GCM envelope encryption."},
+		},
+	}
+	if err := repo.UpsertDocument(ctx, doc); err != nil {
+		t.Fatalf("UpsertDocument failed: %v", err)
+	}
+
+	db := repo.GetDB()
+	countFor := func(match string) int {
+		var n int
+		if err := db.QueryRowContext(ctx, "SELECT count(*) FROM fts_sections WHERE fts_sections MATCH ?", match).Scan(&n); err != nil {
+			t.Fatalf("FTS query %q failed: %v", match, err)
+		}
+		return n
+	}
+
+	// Empty sections are not indexed; title, heading, tags, content and metadata are searchable.
+	var total int
+	db.QueryRowContext(ctx, "SELECT count(*) FROM fts_sections").Scan(&total)
+	if total != 1 {
+		t.Errorf("Expected 1 indexed section, got %d", total)
+	}
+	for _, m := range []string{"title:Crypto", "heading:AES", "tags:security", "content:envelope", "metadata:infra"} {
+		if countFor(m) != 1 {
+			t.Errorf("Expected match for %q", m)
+		}
+	}
+
+	// Re-upsert replaces instead of duplicating.
+	if err := repo.UpsertDocument(ctx, doc); err != nil {
+		t.Fatalf("UpsertDocument failed: %v", err)
+	}
+	db.QueryRowContext(ctx, "SELECT count(*) FROM fts_sections").Scan(&total)
+	if total != 1 {
+		t.Errorf("Expected 1 indexed section after re-upsert, got %d", total)
+	}
+
+	// Backfill: an empty fts_sections table is rebuilt by the migration.
+	if _, err := db.ExecContext(ctx, "DELETE FROM fts_sections"); err != nil {
+		t.Fatalf("Failed to clear fts_sections: %v", err)
+	}
+	if err := migrate(db); err != nil {
+		t.Fatalf("migrate failed: %v", err)
+	}
+	if countFor("heading:AES AND tags:security AND metadata:infra") != 1 {
+		t.Errorf("Expected backfilled section with tags and metadata")
 	}
 }

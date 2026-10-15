@@ -14,6 +14,9 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Model != "gemma3:1b" {
 		t.Fatalf("expected default model gemma3:1b, got %s", cfg.Model)
 	}
+	if cfg.Retriever != RetrieverHybrid {
+		t.Fatalf("expected default retriever hybrid, got %s", cfg.Retriever)
+	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("default config should be valid, got: %v", err)
 	}
@@ -88,5 +91,11 @@ func TestConfig_Validate(t *testing.T) {
 	cfg.TimeoutSeconds = 0
 	if err := cfg.Validate(); err == nil {
 		t.Errorf("expected error for timeout 0")
+	}
+
+	cfg = DefaultConfig()
+	cfg.Retriever = "vector-only"
+	if err := cfg.Validate(); err == nil {
+		t.Errorf("expected error for unknown retriever")
 	}
 }

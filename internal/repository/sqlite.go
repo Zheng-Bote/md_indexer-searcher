@@ -5,6 +5,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"sort"
 	"strings"
 
 	"github.com/md-indexer/internal/entities"
@@ -48,7 +49,20 @@ func migrate(db *sql.DB) error {
 	CREATE TABLE IF NOT EXISTS entity_properties (entity_id TEXT, property_key TEXT, property_value TEXT, FOREIGN KEY(entity_id) REFERENCES entities(id));
 	CREATE TABLE IF NOT EXISTS entity_relations (source_entity_id TEXT, target_entity_id TEXT, relation_type TEXT, FOREIGN KEY(source_entity_id) REFERENCES entities(id), FOREIGN KEY(target_entity_id) REFERENCES entities(id));
 
-	CREATE VIRTUAL TABLE IF NOT EXISTS fts_documents USING fts5(id UNINDEXED, title, content, tags);`
+	CREATE VIRTUAL TABLE IF NOT EXISTS fts_documents USING fts5(id UNINDEXED, title, content, tags);
+	-- Wikilink targets and entities resolve to documents by title.
+	CREATE INDEX IF NOT EXISTS idx_documents_title ON documents(title);
+	CREATE VIRTUAL TABLE IF NOT EXISTS fts_sections USING fts5(section_id UNINDEXED, document_id UNINDEXED, title, heading, tags, content, metadata);
+
+	-- Backfill section FTS for databases indexed before fts_sections existed (unchanged files are never re-indexed).
+	INSERT INTO fts_sections (section_id, document_id, title, heading, tags, content, metadata)
+	SELECT s.id, s.document_id, d.title, s.heading,
+		COALESCE((SELECT group_concat(dt.tag_id, ' ') FROM document_tags dt WHERE dt.document_id = d.id), ''),
+		s.content,
+		COALESCE((SELECT group_concat(p.property_value, ' ') FROM entity_properties p WHERE p.entity_id = d.title), '')
+	FROM sections s
+	JOIN documents d ON d.id = s.document_id
+	WHERE s.content != '' AND NOT EXISTS (SELECT 1 FROM fts_sections);`
 	
 	_, err := db.Exec(query)
 	return err
@@ -64,6 +78,7 @@ func (r *SQLiteRepository) UpsertDocument(ctx context.Context, doc *entities.Doc
 	tx.ExecContext(ctx, "DELETE FROM sections WHERE document_id = ?", doc.ID)
 	tx.ExecContext(ctx, "DELETE FROM links WHERE source_document_id = ?", doc.ID)
 	tx.ExecContext(ctx, "DELETE FROM fts_documents WHERE id = ?", doc.ID)
+	tx.ExecContext(ctx, "DELETE FROM fts_sections WHERE document_id = ?", doc.ID)
 
 	// 2. Wipe Entity properties and outgoing relations for this document
 	entID := doc.EntityName
@@ -87,8 +102,13 @@ func (r *SQLiteRepository) UpsertDocument(ctx context.Context, doc *entities.Doc
 		tx.ExecContext(ctx, "INSERT INTO links (source_document_id, target_document_id) VALUES (?, ?)", link.SourceDocID, link.TargetDocID)
 	}
 
+	tags := strings.Join(doc.Tags, " ")
+	metadata := propertyValues(doc.EntityProperties)
 	for _, sec := range doc.Sections {
 		tx.ExecContext(ctx, "INSERT INTO sections (id, document_id, heading, level, content) VALUES (?, ?, ?, ?, ?)", sec.ID, doc.ID, sec.Heading, sec.Level, sec.Content)
+		if sec.Content != "" {
+			tx.ExecContext(ctx, "INSERT INTO fts_sections (section_id, document_id, title, heading, tags, content, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)", sec.ID, doc.ID, doc.Title, sec.Heading, tags, sec.Content, metadata)
+		}
 	}
 
 	// 4. Insert Entity data if IsEntity
@@ -122,6 +142,20 @@ func (r *SQLiteRepository) UpsertDocument(ctx context.Context, doc *entities.Doc
 	}
 
 	return tx.Commit()
+}
+
+// propertyValues joins frontmatter property values in key order for full-text indexing.
+func propertyValues(props map[string]string) string {
+	keys := make([]string, 0, len(props))
+	for k := range props {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	values := make([]string, 0, len(keys))
+	for _, k := range keys {
+		values = append(values, props[k])
+	}
+	return strings.Join(values, " ")
 }
 
 func (r *SQLiteRepository) RemoveDocument(ctx context.Context, path string) error {

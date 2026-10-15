@@ -14,6 +14,7 @@ import (
 	"github.com/md-indexer/internal/ai/config"
 	"github.com/md-indexer/internal/ai/contextbuilder"
 	"github.com/md-indexer/internal/ai/conversation"
+	"github.com/md-indexer/internal/ai/hybrid"
 	"github.com/md-indexer/internal/ai/model"
 	"github.com/md-indexer/internal/ai/provider"
 	"github.com/md-indexer/internal/ai/retriever"
@@ -94,5 +95,18 @@ func TestContextWindow(t *testing.T) {
 	// 60000 bytes ~ 20000 tokens + 2048 output -> next 8192 step above 22048.
 	if got := contextWindow("", strings.Repeat("a", 60000), 2048); got != 24576 {
 		t.Errorf("expected window 24576, got %d", got)
+	}
+}
+
+func TestNewRetriever_SelectsImplementation(t *testing.T) {
+	db := setupAssistantTestDB(t)
+	cfg := config.DefaultConfig()
+
+	if _, ok := NewRetriever(db, cfg).(*hybrid.Retriever); !ok {
+		t.Errorf("expected hybrid retriever by default")
+	}
+	cfg.Retriever = config.RetrieverClassic
+	if _, ok := NewRetriever(db, cfg).(*retriever.Retriever); !ok {
+		t.Errorf("expected classic retriever")
 	}
 }

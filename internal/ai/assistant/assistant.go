@@ -5,6 +5,7 @@ package assistant
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 
@@ -14,17 +15,32 @@ import (
 	"github.com/md-indexer/internal/ai/contextbuilder"
 	"github.com/md-indexer/internal/ai/conversation"
 	"github.com/md-indexer/internal/ai/gaps"
+	"github.com/md-indexer/internal/ai/hybrid"
 	"github.com/md-indexer/internal/ai/model"
 	"github.com/md-indexer/internal/ai/prompt"
 	"github.com/md-indexer/internal/ai/provider"
 	"github.com/md-indexer/internal/ai/retriever"
 )
 
+// Retriever fetches evidence for a classified question.
+type Retriever interface {
+	Retrieve(ctx context.Context, query string, intent model.Intent) (*model.RetrievalResult, error)
+}
+
+// NewRetriever creates the retriever selected by cfg.Retriever on a read-only knowledge.db connection.
+func NewRetriever(db *sql.DB, cfg *config.Config) Retriever {
+	if cfg.Retriever == config.RetrieverClassic {
+		return retriever.NewRetriever(db, cfg.GraphDepth)
+	}
+	weights := hybrid.Weights{FTS: cfg.FusionFTSWeight, Graph: cfg.FusionGraphWeight, Entity: cfg.FusionEntityWeight}
+	return hybrid.NewSQLiteRetriever(db, cfg.GraphDepth, weights, cfg.TopKFTS)
+}
+
 // Assistant orchestrates all AI subcomponents into a coherent Q&A pipeline.
 type Assistant struct {
 	cfg            *config.Config
 	classifier     classifier.Classifier
-	retriever      *retriever.Retriever
+	retriever      Retriever
 	contextBuilder *contextbuilder.ContextBuilder
 	provider       provider.LLMProvider
 }
@@ -33,7 +49,7 @@ type Assistant struct {
 func NewAssistant(
 	cfg *config.Config,
 	clf classifier.Classifier,
-	ret *retriever.Retriever,
+	ret Retriever,
 	cb *contextbuilder.ContextBuilder,
 	prov provider.LLMProvider,
 ) *Assistant {
