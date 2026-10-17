@@ -5,6 +5,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -66,27 +67,43 @@ func migrate(db *sql.DB) error {
 	FROM sections s
 	JOIN documents d ON d.id = s.document_id
 	WHERE s.content != '' AND NOT EXISTS (SELECT 1 FROM fts_sections);`
-	
+
 	_, err := db.Exec(query)
 	return err
 }
 
 func (r *SQLiteRepository) UpsertDocument(ctx context.Context, doc *entities.Document) error {
 	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	defer tx.Rollback()
 
-	// 1. Wipe Document data
+	// 1. Wipe previous Document data (both by previous ID at path and new doc.ID)
+	var prevID, prevTitle string
+	_ = tx.QueryRowContext(ctx, "SELECT id, title FROM documents WHERE path = ?", doc.Path).Scan(&prevID, &prevTitle)
+	for _, id := range []string{prevID, doc.ID} {
+		if id == "" {
+			continue
+		}
+		tx.ExecContext(ctx, "DELETE FROM sections WHERE document_id = ?", id)
+		tx.ExecContext(ctx, "DELETE FROM links WHERE source_document_id = ?", id)
+		tx.ExecContext(ctx, "DELETE FROM fts_documents WHERE id = ?", id)
+		tx.ExecContext(ctx, "DELETE FROM fts_sections WHERE document_id = ?", id)
+		tx.ExecContext(ctx, "DELETE FROM document_tags WHERE document_id = ?", id)
+		tx.ExecContext(ctx, "DELETE FROM metadata WHERE document_id = ?", id)
+	}
 	tx.ExecContext(ctx, "DELETE FROM documents WHERE path = ?", doc.Path)
-	tx.ExecContext(ctx, "DELETE FROM sections WHERE document_id = ?", doc.ID)
-	tx.ExecContext(ctx, "DELETE FROM links WHERE source_document_id = ?", doc.ID)
-	tx.ExecContext(ctx, "DELETE FROM fts_documents WHERE id = ?", doc.ID)
-	tx.ExecContext(ctx, "DELETE FROM fts_sections WHERE document_id = ?", doc.ID)
 
 	// 2. Wipe Entity properties and outgoing relations for this document
 	entID := doc.EntityName
-	if entID == "" { entID = doc.Title }
-	
+	if entID == "" {
+		entID = doc.Title
+	}
+	if prevTitle != "" && prevTitle != entID {
+		tx.ExecContext(ctx, "DELETE FROM entity_properties WHERE entity_id = ?", prevTitle)
+		tx.ExecContext(ctx, "DELETE FROM entity_relations WHERE source_entity_id = ?", prevTitle)
+	}
 	tx.ExecContext(ctx, "DELETE FROM entity_properties WHERE entity_id = ?", entID)
 	tx.ExecContext(ctx, "DELETE FROM entity_relations WHERE source_entity_id = ?", entID)
 
@@ -94,8 +111,17 @@ func (r *SQLiteRepository) UpsertDocument(ctx context.Context, doc *entities.Doc
 	tx.ExecContext(ctx, "INSERT INTO documents (id, path, title, hash, modified_at, indexed_at) VALUES (?, ?, ?, ?, ?, ?)", doc.ID, doc.Path, doc.Title, doc.Hash, doc.ModifiedAt, doc.IndexedAt)
 	tx.ExecContext(ctx, "INSERT INTO fts_documents (id, title, content, tags) VALUES (?, ?, ?, ?)", doc.ID, doc.Title, doc.Content, strings.Join(doc.Tags, " "))
 
+	// Persist document metadata
+	for k, v := range doc.Metadata {
+		switch val := v.(type) {
+		case string:
+			tx.ExecContext(ctx, "INSERT INTO metadata (document_id, key, value) VALUES (?, ?, ?)", doc.ID, k, val)
+		case int, int64, float64, bool:
+			tx.ExecContext(ctx, "INSERT INTO metadata (document_id, key, value) VALUES (?, ?, ?)", doc.ID, k, fmt.Sprintf("%v", val))
+		}
+	}
+
 	// Persist document tags
-	tx.ExecContext(ctx, "DELETE FROM document_tags WHERE document_id = ?", doc.ID)
 	for _, tag := range doc.Tags {
 		tx.ExecContext(ctx, "INSERT OR IGNORE INTO tags (id, name) VALUES (?, ?)", tag, tag)
 		tx.ExecContext(ctx, "INSERT OR IGNORE INTO document_tags (document_id, tag_id) VALUES (?, ?)", doc.ID, tag)
@@ -119,11 +145,11 @@ func (r *SQLiteRepository) UpsertDocument(ctx context.Context, doc *entities.Doc
 		tx.ExecContext(ctx, "INSERT OR IGNORE INTO entity_types (id, name) VALUES ('unresolved', 'unresolved')")
 		tx.ExecContext(ctx, "INSERT OR IGNORE INTO entity_types (id, name) VALUES (?, ?)", doc.EntityType, doc.EntityType)
 		tx.ExecContext(ctx, "INSERT INTO entities (id, type_id, name) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET type_id = excluded.type_id, name = excluded.name", entID, doc.EntityType, doc.EntityName)
-		
+
 		for k, v := range doc.EntityProperties {
 			tx.ExecContext(ctx, "INSERT INTO entity_properties (entity_id, property_key, property_value) VALUES (?, ?, ?)", entID, k, v)
 		}
-		
+
 		seenRel := make(map[string]bool)
 		for _, rel := range doc.EntityRelations {
 			if rel.SourceID == "" || rel.TargetID == "" {
@@ -236,8 +262,34 @@ func (r *SQLiteRepository) DeleteOrphanEmbeddings(ctx context.Context) (int64, e
 }
 
 func (r *SQLiteRepository) RemoveDocument(ctx context.Context, path string) error {
-	_, err := r.db.ExecContext(ctx, "DELETE FROM documents WHERE path = ?", path)
-	return err
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var docID, title string
+	if err := tx.QueryRowContext(ctx, "SELECT id, title FROM documents WHERE path = ?", path).Scan(&docID, &title); err != nil {
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		return err
+	}
+
+	tx.ExecContext(ctx, "DELETE FROM section_embeddings WHERE section_id IN (SELECT id FROM sections WHERE document_id = ?)", docID)
+	tx.ExecContext(ctx, "DELETE FROM sections WHERE document_id = ?", docID)
+	tx.ExecContext(ctx, "DELETE FROM links WHERE source_document_id = ?", docID)
+	tx.ExecContext(ctx, "DELETE FROM document_tags WHERE document_id = ?", docID)
+	tx.ExecContext(ctx, "DELETE FROM metadata WHERE document_id = ?", docID)
+	tx.ExecContext(ctx, "DELETE FROM fts_documents WHERE id = ?", docID)
+	tx.ExecContext(ctx, "DELETE FROM fts_sections WHERE document_id = ?", docID)
+	tx.ExecContext(ctx, "DELETE FROM documents WHERE id = ?", docID)
+	if title != "" {
+		tx.ExecContext(ctx, "DELETE FROM entity_properties WHERE entity_id = ?", title)
+		tx.ExecContext(ctx, "DELETE FROM entity_relations WHERE source_entity_id = ?", title)
+		tx.ExecContext(ctx, "DELETE FROM entities WHERE id = ?", title)
+	}
+	return tx.Commit()
 }
 
 func (r *SQLiteRepository) GetDocumentByPath(ctx context.Context, path string) (*entities.Document, error) {
@@ -259,13 +311,17 @@ func (r *SQLiteRepository) Search(ctx context.Context, query string) ([]entities
 		FROM fts_documents 
 		WHERE fts_documents MATCH ? 
 		ORDER BY rank LIMIT 20`, query)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	defer rows.Close()
 
 	var results []entities.SearchResult
 	for rows.Next() {
 		var res entities.SearchResult
-		if err := rows.Scan(&res.DocumentID, &res.Title, &res.Snippet, &res.Rank); err != nil { return nil, err }
+		if err := rows.Scan(&res.DocumentID, &res.Title, &res.Snippet, &res.Rank); err != nil {
+			return nil, err
+		}
 		results = append(results, res)
 	}
 	return results, nil
@@ -273,13 +329,17 @@ func (r *SQLiteRepository) Search(ctx context.Context, query string) ([]entities
 
 func (r *SQLiteRepository) GetAllDocuments(ctx context.Context) ([]entities.Document, error) {
 	rows, err := r.db.QueryContext(ctx, "SELECT id, path, title FROM documents")
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	defer rows.Close()
 
 	var results []entities.Document
 	for rows.Next() {
 		var doc entities.Document
-		if err := rows.Scan(&doc.ID, &doc.Path, &doc.Title); err != nil { return nil, err }
+		if err := rows.Scan(&doc.ID, &doc.Path, &doc.Title); err != nil {
+			return nil, err
+		}
 		results = append(results, doc)
 	}
 	return results, nil

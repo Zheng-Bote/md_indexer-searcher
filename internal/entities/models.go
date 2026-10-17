@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 package entities
+
 import "time"
 
 type Document struct {
@@ -54,9 +55,9 @@ type EntityRelation struct {
 }
 
 type GraphNode struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Type     string `json:"type"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Type string `json:"type"`
 }
 
 type GraphEdge struct {

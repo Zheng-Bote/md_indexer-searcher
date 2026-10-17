@@ -218,3 +218,64 @@ Key components:
 	}
 }
 
+func TestParseFile_LinkNormalizationAndCodeBlockExclusion(t *testing.T) {
+	content := `---
+type: service
+name: SensorHub
+uses:
+  - "[[MQTT Broker]]"
+  - "[[folder/InfluxDB#Write|Influx]]"
+---
+# Overview
+Connects to [[MQTT Broker|Broker Alias]] and [[Zigbee2MQTT#Pairing]] with #iot and #123.
+Inline code like ` + "`[[which treefrog]] #define`" + ` must be ignored.
+
+` + "```c\n#include <stdio.h>\n#define MAX 10\n// [[FakeCodeLink]]\n```\n"
+
+	f, err := os.CreateTemp("", "*.md")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(f.Name())
+	f.WriteString(content)
+	f.Close()
+
+	doc, err := NewParser().ParseFile(f.Name())
+	if err != nil {
+		t.Fatalf("ParseFile failed: %v", err)
+	}
+
+	// Frontmatter relations must strip [[ ]], path, #heading, and |alias.
+	wantRels := map[string]bool{"MQTT Broker": false, "InfluxDB": false}
+	for _, r := range doc.EntityRelations {
+		if r.Type == "USES" {
+			if _, ok := wantRels[r.TargetID]; ok {
+				wantRels[r.TargetID] = true
+			} else {
+				t.Errorf("unexpected USES relation target %q", r.TargetID)
+			}
+		}
+	}
+	for target, seen := range wantRels {
+		if !seen {
+			t.Errorf("missing normalized USES relation to %q, got %+v", target, doc.EntityRelations)
+		}
+	}
+
+	// Inline links must normalize aliases/headings and ignore code blocks & inline code.
+	gotLinks := make(map[string]bool)
+	for _, l := range doc.Links {
+		gotLinks[l.TargetDocID] = true
+	}
+	if !gotLinks["MQTT Broker"] || !gotLinks["Zigbee2MQTT"] {
+		t.Errorf("expected normalized links to MQTT Broker and Zigbee2MQTT, got %+v", doc.Links)
+	}
+	if gotLinks["which treefrog"] || gotLinks["FakeCodeLink"] {
+		t.Errorf("links inside inline code or fenced code blocks must be ignored, got %+v", doc.Links)
+	}
+
+	// Tags must include #iot, but ignore #include, #define, and numeric #123.
+	if len(doc.Tags) != 1 || doc.Tags[0] != "iot" {
+		t.Errorf("expected only tag 'iot', got %+v", doc.Tags)
+	}
+}

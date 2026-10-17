@@ -229,13 +229,37 @@ func TestSQLiteRepository_CRUD_Search_AndBacklinks(t *testing.T) {
 		t.Errorf("Expected nil for non-existent document, got %v, err: %v", ghostDoc, err)
 	}
 
-	// 5. RemoveDocument
+	doc1.Metadata = map[string]interface{}{"author": "alice", "version": 2}
+	if err := repo.UpsertDocument(ctx, doc1); err != nil {
+		t.Fatalf("Re-upsert doc1 with metadata failed: %v", err)
+	}
+	var metaCount int
+	repo.GetDB().QueryRowContext(ctx, "SELECT count(*) FROM metadata WHERE document_id = 'doc-101'").Scan(&metaCount)
+	if metaCount != 2 {
+		t.Errorf("Expected 2 metadata rows for doc-101, got %d", metaCount)
+	}
+
+	// 5. RemoveDocument (must also cascade-delete sections, links, tags, metadata, fts)
 	if err := repo.RemoveDocument(ctx, "/vault/DocA.md"); err != nil {
 		t.Fatalf("RemoveDocument failed: %v", err)
 	}
 	deletedDoc, err := repo.GetDocumentByPath(ctx, "/vault/DocA.md")
 	if err != nil || deletedDoc != nil {
 		t.Errorf("Expected nil after removal, got %v", deletedDoc)
+	}
+	for _, query := range []string{
+		"SELECT count(*) FROM sections WHERE document_id = 'doc-101'",
+		"SELECT count(*) FROM links WHERE source_document_id = 'doc-101'",
+		"SELECT count(*) FROM document_tags WHERE document_id = 'doc-101'",
+		"SELECT count(*) FROM metadata WHERE document_id = 'doc-101'",
+		"SELECT count(*) FROM fts_documents WHERE id = 'doc-101'",
+		"SELECT count(*) FROM fts_sections WHERE document_id = 'doc-101'",
+	} {
+		var n int
+		repo.GetDB().QueryRowContext(ctx, query).Scan(&n)
+		if n != 0 {
+			t.Errorf("Expected 0 orphan rows for (%s), got %d", query, n)
+		}
 	}
 }
 

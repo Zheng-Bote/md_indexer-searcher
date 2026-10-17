@@ -39,7 +39,16 @@ func (s *IndexerService) IndexAll(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		if !info.IsDir() && strings.HasSuffix(strings.ToLower(path), ".md") {
+		if info.IsDir() {
+			if path != s.dir && ShouldSkipPath(path) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if ShouldSkipPath(path) {
+			return nil
+		}
+		if strings.HasSuffix(strings.ToLower(path), ".md") {
 			return s.indexFile(ctx, path)
 		}
 		return nil
@@ -51,8 +60,25 @@ func (s *IndexerService) IndexAll(ctx context.Context) error {
 	return nil
 }
 
+// ShouldSkipPath reports whether a directory or file belongs to a template or hidden folder (e.g. _templates_, .obsidian, .git).
+func ShouldSkipPath(path string) bool {
+	for _, part := range strings.Split(filepath.ToSlash(path), "/") {
+		if part == "" || part == "." || part == ".." {
+			continue
+		}
+		lower := strings.ToLower(part)
+		if lower == "_templates_" || lower == "_template_" || (strings.HasPrefix(part, ".") && len(part) > 1) {
+			return true
+		}
+	}
+	return false
+}
+
 // IndexFile indexes a single file and then embeds its changed sections.
 func (s *IndexerService) IndexFile(ctx context.Context, path string) error {
+	if ShouldSkipPath(path) {
+		return nil
+	}
 	if err := s.indexFile(ctx, path); err != nil {
 		return err
 	}

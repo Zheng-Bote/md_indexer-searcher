@@ -30,7 +30,9 @@ func NewGraphEngine(repo *repository.SQLiteRepository) GraphEngine {
 func (g *graphImpl) DirectRelations(ctx context.Context, entityID string) ([]entities.EntityRelation, error) {
 	db := g.repo.GetDB()
 	rows, err := db.QueryContext(ctx, "SELECT source_entity_id, target_entity_id, relation_type FROM entity_relations WHERE source_entity_id = ?", entityID)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	defer rows.Close()
 
 	var rels []entities.EntityRelation
@@ -46,7 +48,9 @@ func (g *graphImpl) DirectRelations(ctx context.Context, entityID string) ([]ent
 func (g *graphImpl) ReverseRelations(ctx context.Context, entityID string) ([]entities.EntityRelation, error) {
 	db := g.repo.GetDB()
 	rows, err := db.QueryContext(ctx, "SELECT source_entity_id, target_entity_id, relation_type FROM entity_relations WHERE target_entity_id = ?", entityID)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	defer rows.Close()
 
 	var rels []entities.EntityRelation
@@ -75,7 +79,9 @@ func (g *graphImpl) DependencyTree(ctx context.Context, entityID string) ([]enti
 		SELECT source, target, rel FROM traverse;
 	`
 	rows, err := db.QueryContext(ctx, query, entityID)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	defer rows.Close()
 
 	var edges []entities.GraphEdge
@@ -104,7 +110,9 @@ func (g *graphImpl) ImpactAnalysis(ctx context.Context, entityID string) ([]enti
 		SELECT source, target, rel FROM traverse;
 	`
 	rows, err := db.QueryContext(ctx, query, entityID)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	defer rows.Close()
 
 	var edges []entities.GraphEdge
@@ -134,7 +142,9 @@ func (g *graphImpl) ShortestPath(ctx context.Context, sourceID, targetID string)
 	var pathStr string
 	err := db.QueryRowContext(ctx, query, sourceID, sourceID, targetID, targetID).Scan(&pathStr)
 	if err != nil {
-		if err == sql.ErrNoRows { return nil, nil }
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
 		return nil, err
 	}
 	return strings.Split(pathStr, ","), nil

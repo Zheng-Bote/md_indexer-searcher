@@ -26,6 +26,13 @@ func TestIndexerService_IndexAllAndIndexFile(t *testing.T) {
 	if err := os.WriteFile(fileNonMD, []byte("binary data"), 0644); err != nil {
 		t.Fatalf("Failed to write non-md file: %v", err)
 	}
+	tmplDir := filepath.Join(tempDir, "_templates_")
+	if err := os.MkdirAll(tmplDir, 0755); err != nil {
+		t.Fatalf("Failed to create _templates_: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmplDir, "entity.md"), []byte("---\ntype: \"<% tp.system.suggester %>\"\n---\n# Template"), 0644); err != nil {
+		t.Fatalf("Failed to write template file: %v", err)
+	}
 
 	repo, err := repository.NewSQLiteRepository(":memory:")
 	if err != nil {
@@ -36,7 +43,7 @@ func TestIndexerService_IndexAllAndIndexFile(t *testing.T) {
 	svc := NewIndexerService(repo, tempDir)
 	ctx := context.Background()
 
-	// 1. IndexAll
+	// 1. IndexAll (must skip _templates_/entity.md)
 	if err := svc.IndexAll(ctx); err != nil {
 		t.Fatalf("IndexAll failed: %v", err)
 	}
@@ -46,7 +53,7 @@ func TestIndexerService_IndexAllAndIndexFile(t *testing.T) {
 		t.Fatalf("GetAllDocuments failed: %v", err)
 	}
 	if len(allDocs) != 2 {
-		t.Errorf("Expected 2 indexed markdown documents, got %d", len(allDocs))
+		t.Errorf("Expected 2 indexed markdown documents (skipping _templates_), got %d", len(allDocs))
 	}
 
 	// 2. IndexFile again (unchanged file should skip cleanly)
