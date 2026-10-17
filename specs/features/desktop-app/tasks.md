@@ -29,24 +29,28 @@ SPDX-License-Identifier: Apache-2.0
 - [x] Test: concurrent write (indexer) and read (search) on one DB file without `SQLITE_BUSY`.
 
 ### Task 3: Tauri Shell (`apps/desktop/src-tauri`)
-- [ ] Initialise Tauri v2 in `apps/desktop` (dev URL, frontend dist path, app identifier).
-- [ ] Add plugins: shell, dialog, store, http (scope `http://127.0.0.1:*`).
-- [ ] Configure `externalBin` for `md-indexer` and `md-api`; git-ignore `binaries/` and `target/`.
-- [ ] Implement `SidecarManager` (start/stop, free ports, readiness polling, `backend-status` events, stderr tail, kill on window close).
-- [ ] Implement commands `select_vault`, `apply_config`, `backend_status`.
+- [x] Initialise Tauri v2 in `apps/desktop` (dev URL, frontend dist path, app identifier).
+- [x] Add plugins: shell, dialog, store, http (scope `http://127.0.0.1:*`).
+- [x] Configure `externalBin` for `md-indexer` and `md-api`; git-ignore `binaries/` and `target/`.
+- [x] Implement `SidecarManager` (start/stop, free ports, readiness polling, `backend-status` events, stderr tail, kill on app exit).
+- [x] Implement commands `apply_config`, `backend_status` (folder picker via dialog plugin in the frontend).
+- [x] `cargo check`, `cargo clippy` (no warnings) and `cargo test` pass.
 
 ### Task 4: Angular Frontend (`apps/desktop/src`)
-- [ ] Add Spartan-ng helm components: button, select, textarea, card, badge, sonner.
-- [ ] Implement `BackendService`, `SettingsService`, `ApiClient`.
-- [ ] Implement `VaultPicker`, `ModelSelector`, `AskPanel`, `AnswerView` and the main layout.
-- [ ] Restore saved settings on startup and auto-start the backend.
-- [ ] Vitest unit tests for services (Tauri APIs mocked) and `AnswerView` rendering.
+- [x] Add Spartan-ng helm components: button, select, textarea, card, badge, sonner, label, spinner, alert.
+- [x] Implement `BackendService`, `SettingsService`, `ApiClient`.
+- [x] Implement `VaultPicker`, `ModelSelector`, `AskPanel`, `AnswerView` and the main layout.
+- [x] Show a live elapsed timer while waiting and the response time with each answer.
+- [x] Wire Tailwind v4 into the Angular build (`@tailwindcss/postcss`, `.postcssrc.json`).
+- [x] Restore saved settings on startup and auto-start the backend.
+- [x] Vitest unit tests for services (Tauri APIs mocked) and `AnswerView` rendering.
 
 ### Task 5: Build Integration (`Makefile`)
-- [ ] Add `desktop-sidecars`, `desktop-dev` and `desktop` targets.
+- [x] Add `desktop-sidecars`, `desktop-dev` and `desktop` targets.
 
 ### Task 6: Verification, Documentation & Converge (`/speckit.converge`)
-- [ ] Run `go test ./...`, `gofmt -l cmd/ internal/ examples/`, `ng build`, `ng test`, `cargo check`.
-- [ ] Manual check against the test vault: select vault, index, switch model, ask question, switch vault and back, close app (no remaining processes).
-- [ ] Update `README.md` (desktop section), `apps/desktop/README.md` and `CHANGELOG.md`.
+- [x] Run `go test ./...`, `gofmt -l cmd/ internal/ examples/`, `ng build`, `ng test`, `cargo check`.
+- [x] Manual check against the test vault: select vault, index, ask question (Operator-confirmed), close app (no remaining processes).
+- [ ] Manual check: switch model, switch vault and back.
+- [x] Update `README.md` (desktop section), `apps/desktop/README.md` and `CHANGELOG.md`.
 - [ ] Verify SpecDD convergence against `md-indexer.sdd` and `specs/features/desktop-app/`.

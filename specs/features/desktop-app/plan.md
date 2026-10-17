@@ -45,7 +45,7 @@ SPDX-License-Identifier: Apache-2.0
      - no lister → `501` (same message style as `/api/ai/ask`).
      - lister error → `502` with `"ollama not reachable at <host>"`.
      - success → `{"success": true, "data": {"models": [...], "active": {"model": "...", "embedding_model": "..."}}}`.
-3. **Wiring (`cmd/md-api/main.go`):** Inside the `-ai` block, call `server.WithModelLister(prov, ...)`.
+3. **Wiring (`cmd/md-api/main.go`):** Inside the `-ai` block, call `server.WithModelLister(prov, ...)`. The active embedding model is reported as empty when vectors are disabled.
 
 ### B. Go: Sidecar Readiness (`cmd/md-api`, `cmd/indexer`, `internal/repository`)
 
@@ -59,10 +59,12 @@ SPDX-License-Identifier: Apache-2.0
 2. **Plugins:** `tauri-plugin-shell` (sidecars), `tauri-plugin-dialog` (folder picker), `tauri-plugin-store` (settings), `tauri-plugin-http` (fetch scoped to `http://127.0.0.1:*`, avoids the missing CORS preflight handling in `md-api`).
 3. **Sidecars:** `bundle.externalBin: ["binaries/md-indexer", "binaries/md-api"]`; the Makefile copies `bin/*` to `src-tauri/binaries/<name>-<target-triple>`.
 4. **`SidecarManager` (Rust, managed state):**
-   - `start(vault, model, embedding_model)`: compute DB path, pick two free ports, spawn `md-indexer`, poll it until it responds, spawn `md-api`, poll `/health`, emit `backend-status` events (`indexing`, `starting`, `ready`, `error`) to the frontend.
+   - `apply(vault, model, embedding_model)`: compute DB path, kill running sidecars, then in the background pick free ports, spawn `md-indexer`, poll its `/health`, spawn `md-api`, poll `/health`, and emit `backend-status` events (`indexing`, `starting`, `ready`, `error`). Every apply starts a new generation; work of superseded generations is discarded.
+   - Any vault or model change restarts both sidecars. The indexer pass is incremental (hash check, missing embeddings only).
+   - Without an embedding model, `md-indexer` runs without `-embed-model` and `md-api` with `-vectors=false`.
    - `stop()`: kill both children; also called on `WindowEvent::Destroyed`.
    - Forward the last N stderr lines per sidecar for the error view.
-5. **Commands:** `select_vault() -> Option<String>`, `apply_config(vault, model, embedding_model)`, `backend_status() -> Status { state, api_base_url }`.
+5. **Commands:** `apply_config(vault, model, embedding_model)`, `backend_status() -> BackendStatus`. The folder picker runs in the frontend via `@tauri-apps/plugin-dialog`.
 
 ### D. Angular Frontend (`apps/desktop/src`)
 

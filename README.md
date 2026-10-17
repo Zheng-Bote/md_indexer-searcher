@@ -204,8 +204,23 @@ make api-run
 - `GET /api/backlinks/{name}`: Find documents that link to `{name}`
 - `GET /api/impact/{name}`: Recursive impact analysis for an entity
 - `GET /api/graph/{name}`: Recursive dependency tree for an entity
+- `POST /api/ai/ask`: Grounded AI answer (requires `-ai`)
+- `GET /api/ai/models`: Installed Ollama models and the active generation/embedding model (requires `-ai`)
+
+Use `-host 127.0.0.1` to listen on localhost only (`md-indexer` accepts the same flag).
 
 *(The exact specification is documented in the included `openapi.yaml` file).*
+
+### 4. Desktop App (`apps/desktop`)
+
+A Tauri v2 + Angular + Spartan-ng desktop client: pick a vault folder, choose the generation and embedding model, and ask questions. It runs `md-indexer` and `md-api` as local sidecars (bound to `127.0.0.1`) and keeps one database per vault in the app data directory. Any change of vault or model restarts the sidecars.
+
+```bash
+make desktop-dev   # build sidecars and start the app in dev mode
+make desktop       # build installable bundles
+```
+
+Prerequisites: Go, Node.js, Rust and the [Tauri system dependencies](https://v2.tauri.app/start/prerequisites/) (on Debian/Ubuntu: `libwebkit2gtk-4.1-dev`, `build-essential`, `libssl-dev`, `libayatana-appindicator3-dev`, `librsvg2-dev`, `libxdo-dev`, `pkg-config`), plus a running Ollama instance. See `apps/desktop/README.md`.
 
 ## Example Use Case & Walkthrough
 

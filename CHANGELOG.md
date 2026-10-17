@@ -28,7 +28,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added `md-ai gaps` subcommand (`AuditEntityGaps`) to audit all indexed entities in `knowledge.db` for missing descriptions, missing ADR links/relations, and missing API sections.
   - Added `--stream` token streaming (`StreamingLLMProvider` / `OllamaProvider.GenerateStream`) for `md-ai ask` and `md-ai chat`.
 
+- **Desktop App (`apps/desktop`):**
+  - Added a Tauri v2 + Angular 22 + Spartan-ng desktop client with vault selection (native folder dialog), generation/embedding model selection, and grounded Q&A rendering (sanitized Markdown, sources, knowledge gaps).
+  - The app runs `md-indexer` and `md-api` as sidecars on `127.0.0.1` with one database per vault; changing the vault or a model restarts them. Settings are restored on start.
+  - Added `make desktop-sidecars`, `make desktop-dev` and `make desktop`.
+- **Model Listing (`md-api`):** Added `GET /api/ai/models` (`provider.ModelLister`, `OllamaProvider.ListModels`) returning installed Ollama models and the active models (`501` without `-ai`, `502` when Ollama is unreachable).
+- **Bind Address:** Added `-host` flag to `md-indexer` and `md-api` (e.g. `127.0.0.1`); the default still listens on all interfaces.
+
 ### Changed
+- **SQLite Concurrency:** File databases are opened with `journal_mode=WAL` and `busy_timeout=5000` so `md-indexer` and `md-api` can share one database. WAL mode persists in the database file (`-wal`/`-shm` files appear next to it).
 - **Ollama & Model Defaults (`#12`, `#13`, `#16`):**
   - Aligned classic and hybrid retrievers with the real indexer SQLite schema (`entity_properties`, `documents.title` link resolution).
   - Changed default LLM model to `qwen3:14b`, lowered default `max_context_tokens` to `4000` for responsive local CPU inference, configured dynamic `num_ctx` window sizing, disabled `think` mode for non-thinking calls, and required answering in the language of the user's question.

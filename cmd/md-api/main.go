@@ -76,7 +76,11 @@ func main() {
 		cb := contextbuilder.NewContextBuilder(aiCfg.MaxContextTokens)
 		prov := provider.NewOllamaProvider(aiCfg.OllamaHost, &http.Client{Timeout: aiCfg.Timeout()})
 		asst := assistant.NewAssistant(aiCfg, clf, ret, cb, prov)
-		server.WithAssistant(asst).WithModelLister(prov, rest.ActiveModels{Model: aiCfg.Model, EmbeddingModel: aiCfg.EmbeddingModel})
+		active := rest.ActiveModels{Model: aiCfg.Model}
+		if aiCfg.EnableVectors {
+			active.EmbeddingModel = aiCfg.EmbeddingModel
+		}
+		server.WithAssistant(asst).WithModelLister(prov, active)
 		log.Info().Str("model", aiCfg.Model).Str("retriever", aiCfg.Retriever).Msg("AI Assistant endpoint /api/ai/ask enabled")
 	}
 

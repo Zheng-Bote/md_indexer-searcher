@@ -25,7 +25,7 @@ The app is a thin client. All indexing, retrieval and generation stays in the ex
 - **Scenario 2 — Switching Vaults:**
   The user picks a different vault. The app stops both sidecars and restarts them with the new vault and its own database. The previous vault's database is kept, so switching back does not require a full re-index.
 - **Scenario 3 — Model Selection:**
-  The user opens the model selector and sees all models from the local Ollama instance (e.g. `qwen3:14b`, `bge-m3`). After choosing a generation model, the app restarts `md-api` with that model. After choosing a different embedding model, the app also restarts `md-indexer` so missing embeddings are computed.
+  The user opens the model selector and sees all models from the local Ollama instance (e.g. `qwen3:14b`, `bge-m3`). After choosing a generation or embedding model, the app restarts both sidecars. The indexer pass only re-parses changed notes and computes embeddings that are missing for the selected embedding model. Choosing no embedding model disables vector retrieval.
 - **Scenario 4 — Asking a Question:**
   The user types "Wie funktioniert die Ingestion Pipeline?" and submits. The app shows a busy state (CPU generation can take minutes), then renders the Markdown answer, a list of cited source documents, and any detected knowledge gaps.
 - **Scenario 5 — Ollama Not Reachable:**
@@ -44,7 +44,7 @@ The app is a thin client. All indexing, retrieval and generation stays in the ex
 4. **Vault Database Isolation:**
    **WHEN** a vault is selected in the desktop app, **THE SYSTEM SHALL** use a database file in the app data directory that is derived deterministically from the absolute vault path, so each vault keeps its own index and embeddings.
 5. **Sidecar Restart on Configuration Change:**
-   **WHEN** the vault, generation model or embedding model changes, **THE SYSTEM SHALL** stop the affected sidecars and restart them with the new arguments, and **SHALL NOT** accept questions until `md-api` reports healthy on `/health`.
+   **WHEN** the vault, generation model or embedding model changes, **THE SYSTEM SHALL** stop both sidecars and restart them with the new arguments, and **SHALL NOT** accept questions until `md-api` reports healthy on `/health`.
 6. **Indexing State:**
    **WHILE** `md-indexer` is performing its initial index of the selected vault, **THE SYSTEM SHALL** show an indexing state and keep the question input disabled.
 7. **Question Answering:**
@@ -79,7 +79,7 @@ The app is a thin client. All indexing, retrieval and generation stays in the ex
 - [ ] **Security:** Markdown vault files remain read-only (`md-indexer.sdd`). Sidecars bind to `127.0.0.1` only. Rendered answers are sanitized.
 - [ ] **Data Model:** SQLite schema is unchanged; WAL mode is a connection setting and stays CGO-free (`modernc.org/sqlite`).
 - [ ] **Standards:** SPDX headers (`Apache-2.0`) and English source documentation in all new Go, TypeScript and Rust files.
-- [ ] **Project Layout:** `md-indexer.sdd` only describes the Go layout (`cmd/`, `internal/`). The new `apps/` top-level directory for non-Go clients must be acknowledged in the root spec (see open decision in `tasks.md`).
+- [x] **Project Layout:** `md-indexer.sdd` lists `apps/` as the client-app layer that consumes `md-api` only.
 
 ## 7. Acceptance Criteria
 
