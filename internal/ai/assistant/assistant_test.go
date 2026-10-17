@@ -70,8 +70,22 @@ func TestAssistant_Ask(t *testing.T) {
 	if ans.Sources[0].Path != "docs/adr/001-sqlite.md" {
 		t.Errorf("expected source path 'docs/adr/001-sqlite.md', got %s", ans.Sources[0].Path)
 	}
-	if len(ans.Gaps) != 1 {
-		t.Errorf("expected 1 detected knowledge gap, got %d", len(ans.Gaps))
+	if len(ans.Gaps) != 1 || ans.Gaps[0].Reason == "" {
+		t.Errorf("expected 1 detected knowledge gap, got %+v", ans.Gaps)
+	}
+
+	// Deterministic sources: even when the LLM omits [Doc: ...] tags, budgeted context documents are returned.
+	mockNoCite := provider.NewMockProvider("SQLite is used without CGO.")
+	asstNoCite := NewAssistant(cfg, clf, NewRetriever(db, cfg), cb, mockNoCite)
+	ansDet, err := asstNoCite.Ask(ctx, "What ADR was decided for SQLite?", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(ansDet.Sources) == 0 || ansDet.Sources[0].Path != "docs/adr/001-sqlite.md" {
+		t.Errorf("expected deterministic source docs/adr/001-sqlite.md, got %+v", ansDet.Sources)
+	}
+	if ansDet.Plan == nil || ansDet.Plan.QueryType != "fact" {
+		t.Errorf("expected plan with query_type 'fact', got %+v", ansDet.Plan)
 	}
 
 	// Test multi-turn with conversation session

@@ -126,6 +126,13 @@ func TestRetriever_EntityQuery(t *testing.T) {
 			t.Errorf("expected fused score > 0, got %v for %s", s.Score, s.DocumentPath)
 		}
 	}
+	if res.Plan == nil || res.Plan.QueryType != string(QueryEntity) {
+		t.Errorf("expected entity plan info in result, got %+v", res.Plan)
+	}
+	// Encryption Service has an API section and description, but no ADR relation or link -> 1 ADR gap.
+	if len(res.Gaps) != 1 || res.Gaps[0].Entity != "Encryption Service" {
+		t.Errorf("expected ADR knowledge gap for Encryption Service, got %+v", res.Gaps)
+	}
 }
 
 func TestRetriever_ArchitectureQueryExpandsGraph(t *testing.T) {
@@ -145,6 +152,12 @@ func TestRetriever_ArchitectureQueryExpandsGraph(t *testing.T) {
 	}
 	if got["docs/components/encryption-service.md#Overview"] != SourceGraph {
 		t.Errorf("expected encryption service via 2-hop graph, got %v", got)
+	}
+	if res.Architecture == nil {
+		t.Fatalf("expected ArchitectureContext on architecture query")
+	}
+	if len(res.Architecture.Pipelines) == 0 || len(res.Architecture.Services) == 0 || len(res.Architecture.Components) == 0 {
+		t.Errorf("expected pipelines, services and components in ArchitectureContext, got %+v", res.Architecture)
 	}
 }
 

@@ -212,6 +212,24 @@ components:
             intent:
               type: string
               example: "adr"
+            plan:
+              type: object
+              properties:
+                query_type:
+                  type: string
+                  example: "architecture"
+                use_fts:
+                  type: boolean
+                use_entities:
+                  type: boolean
+                use_graph:
+                  type: boolean
+                use_vectors:
+                  type: boolean
+                graph_depth:
+                  type: integer
+                max_results:
+                  type: integer
             model:
               type: string
               example: "qwen3:14b"
@@ -231,4 +249,14 @@ components:
             gaps:
               type: array
               items:
-                type: string
+                type: object
+                required:
+                  - entity
+                  - reason
+                properties:
+                  entity:
+                    type: string
+                    example: "Encryption Service"
+                  reason:
+                    type: string
+                    example: "no ADR linked or documented"

@@ -7,7 +7,9 @@ package hybrid
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/md-indexer/internal/ai/model"
 )
@@ -50,9 +52,19 @@ func NewSQLiteRetriever(db *sql.DB, maxGraphDepth int, vectors VectorRetriever, 
 
 // Retrieve returns fused evidence for the query in the md-ai retrieval model.
 func (r *Retriever) Retrieve(ctx context.Context, query string, intent model.Intent) (*model.RetrievalResult, error) {
+	plan := r.planner.Plan(query, intent)
 	res := &model.RetrievalResult{
-		Query:     query,
-		Intent:    intent,
+		Query:  query,
+		Intent: intent,
+		Plan: &model.RetrievalPlanInfo{
+			QueryType:   string(plan.QueryType),
+			UseFTS:      plan.UseFTS,
+			UseEntities: plan.UseEntities,
+			UseGraph:    plan.UseGraph,
+			UseVectors:  plan.UseVectors,
+			GraphDepth:  plan.GraphDepth,
+			MaxResults:  plan.MaxResults,
+		},
 		Snippets:  make([]model.DocumentSnippet, 0),
 		Entities:  make([]model.EntityMatch, 0),
 		Relations: make([]model.EntityRelationMatch, 0),
@@ -62,7 +74,6 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, intent model.Int
 		return res, nil
 	}
 
-	plan := r.planner.Plan(query, intent)
 	lists := make(map[string][]Candidate)
 
 	if plan.UseFTS {
@@ -89,6 +100,7 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, intent model.Int
 		lists[SourceEntity] = er.Candidates
 		res.Entities = append(res.Entities, er.Entities...)
 		res.Relations = append(res.Relations, er.Relations...)
+		res.Gaps = append(res.Gaps, er.Gaps...)
 	}
 
 	var chains map[string]model.ReasoningChain
@@ -102,7 +114,7 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, intent model.Int
 		chains = gr.Chains
 	}
 
-	fused := Fuse(lists, r.weights, plan.MaxResults)
+	fused := Fuse(lists, r.weights.ForPlan(plan), plan.MaxResults)
 	res.Chains = selectChains(fused, chains, maxChains)
 	for _, c := range fused {
 		res.Snippets = append(res.Snippets, model.DocumentSnippet{
@@ -114,7 +126,93 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, intent model.Int
 			Strategy:     strategy(c),
 		})
 	}
+	if plan.QueryType == QueryArchitecture {
+		res.Architecture = buildArchitectureContext(fused, res.Entities, res.Relations, res.Chains)
+	}
 	return res, nil
+}
+
+// buildArchitectureContext groups discovered entities, documents, ADRs and dependencies into a structured ArchitectureContext.
+func buildArchitectureContext(fused []Candidate, entities []model.EntityMatch, relations []model.EntityRelationMatch, chains []model.ReasoningChain) *model.ArchitectureContext {
+	arch := &model.ArchitectureContext{}
+	seenSvc := make(map[string]bool)
+	seenComp := make(map[string]bool)
+	seenPipe := make(map[string]bool)
+	seenADR := make(map[string]bool)
+	seenEnt := make(map[string]bool)
+	seenDep := make(map[string]bool)
+
+	classify := func(name, typ, path string) {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return
+		}
+		lt := strings.ToLower(typ)
+		ln := strings.ToLower(name)
+		lp := strings.ToLower(path)
+
+		switch {
+		case adrPattern.MatchString(name) || adrPattern.MatchString(path) || lt == "adr":
+			if !seenADR[name] {
+				seenADR[name] = true
+				arch.ADRs = append(arch.ADRs, name)
+			}
+		case lt == "pipeline" || strings.Contains(ln, "pipeline") || strings.Contains(lp, "/pipeline"):
+			if !seenPipe[name] {
+				seenPipe[name] = true
+				arch.Pipelines = append(arch.Pipelines, name)
+			}
+		case lt == "service" || strings.HasSuffix(lt, "-service") || strings.Contains(ln, "service") || strings.Contains(lp, "/service"):
+			if !seenSvc[name] {
+				seenSvc[name] = true
+				arch.Services = append(arch.Services, name)
+			}
+		case lt == "component" || strings.Contains(ln, "component") || strings.Contains(ln, "engine") || strings.Contains(ln, "delivery") || strings.Contains(ln, "gateway") || strings.Contains(lp, "/component"):
+			if !seenComp[name] {
+				seenComp[name] = true
+				arch.Components = append(arch.Components, name)
+			}
+		default:
+			if !seenEnt[name] {
+				seenEnt[name] = true
+				arch.Entities = append(arch.Entities, name)
+			}
+		}
+	}
+
+	for _, e := range entities {
+		classify(e.Name, e.Type, e.DocumentURI)
+	}
+	for _, c := range fused {
+		classify(c.Title, "", c.Path)
+	}
+	for _, r := range relations {
+		key := fmt.Sprintf("%s->%s:%s", r.SourceEntity, r.TargetEntity, r.RelationType)
+		if !seenDep[key] {
+			seenDep[key] = true
+			arch.Dependencies = append(arch.Dependencies, r)
+		}
+	}
+	for _, ch := range chains {
+		for _, st := range ch.Steps {
+			classify(st.Source, "", "")
+			classify(st.Target, "", "")
+			key := fmt.Sprintf("%s->%s:%s", st.Source, st.Target, st.Relation)
+			if !seenDep[key] {
+				seenDep[key] = true
+				arch.Dependencies = append(arch.Dependencies, model.EntityRelationMatch{
+					SourceEntity: st.Source,
+					RelationType: st.Relation,
+					TargetEntity: st.Target,
+				})
+			}
+		}
+	}
+
+	if len(arch.Services) == 0 && len(arch.Components) == 0 && len(arch.Pipelines) == 0 && len(arch.ADRs) == 0 && len(arch.Entities) == 0 && len(arch.Dependencies) == 0 {
+		return nil
+	}
+	return arch
 }
 
 // selectChains returns the reasoning chains of fused documents in fused order, one per document.

@@ -13,10 +13,11 @@ import (
 const baseSystemPrompt = `You are a helpful, precise, and strictly grounded AI assistant for a local Markdown knowledge base.
 Follow these rules strictly:
 1. Answer the question using ONLY the facts present in the provided [Knowledge Context] below.
-2. If the context does not contain enough information to answer the question, clearly state: "I do not have sufficient information in the knowledge base to answer this question." and list what specific information is missing.
+2. If the context does not contain enough information to answer the question, clearly state that there is insufficient information in the knowledge base and list what specific information is missing.
 3. NEVER make up facts, URLs, components, or decisions not explicitly mentioned in the context.
 4. Whenever referencing information from a source, cite it inline using the format: [Doc: <path>#<section>] or [Doc: <path>].
-5. Keep your tone professional, concise, and direct.`
+5. Always respond in the same language as the [User Question] (e.g., if the question is in German, answer in German; if in English, answer in English).
+6. Keep your tone professional, concise, and direct.`
 
 // BuildPrompt creates the full user prompt containing system instructions, context, and question.
 func BuildPrompt(question string, contextText string, intent model.Intent) (systemPrompt string, userPrompt string) {

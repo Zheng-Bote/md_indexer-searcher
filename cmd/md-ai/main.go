@@ -190,7 +190,11 @@ func printFormattedAnswer(ans *model.Answer) {
 	if len(ans.Gaps) > 0 {
 		fmt.Printf("\nKnowledge Gaps:\n")
 		for _, g := range ans.Gaps {
-			fmt.Printf("- %s\n", g)
+			if g.Entity != "" && g.Entity != "general" {
+				fmt.Printf("- [%s] %s\n", g.Entity, g.Reason)
+			} else {
+				fmt.Printf("- %s\n", g.Reason)
+			}
 		}
 	}
 }

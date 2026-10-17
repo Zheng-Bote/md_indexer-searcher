@@ -112,27 +112,14 @@ func (a *Assistant) Ask(ctx context.Context, question string, session *conversat
 	}
 
 	// 7. Post-process citations and knowledge gaps
-	cites := citations.ExtractCitations(genResp.Response)
-	detectedGaps := gaps.DetectGaps(genResp.Response)
-
-	// Attach snippets to citations if matching paths exist
-	for i, c := range cites {
-		for _, s := range retrievalRes.Snippets {
-			if s.DocumentPath == c.Path {
-				snip := s.Content
-				if len(snip) > 200 {
-					snip = snip[:200] + "..."
-				}
-				cites[i].Snippet = strings.TrimSpace(snip)
-				break
-			}
-		}
-	}
+	cites := collectSources(genResp.Response, blocks, retrievalRes.Snippets)
+	detectedGaps := gaps.MergeGaps(retrievalRes.Gaps, gaps.DetectGaps(genResp.Response))
 
 	answer := &model.Answer{
 		Question: question,
 		Answer:   genResp.Response,
 		Intent:   intent,
+		Plan:     retrievalRes.Plan,
 		Model:    genResp.Model,
 		Sources:  cites,
 		Gaps:     detectedGaps,
@@ -143,6 +130,49 @@ func (a *Assistant) Ask(ctx context.Context, question string, session *conversat
 	}
 
 	return answer, nil
+}
+
+// collectSources merges explicit [Doc: ...] citations from the LLM answer with the document
+// context blocks that were deterministically provided in the prompt budget.
+func collectSources(response string, blocks []model.ContextBlock, snippets []model.DocumentSnippet) []model.SourceCitation {
+	cites := citations.ExtractCitations(response)
+	seen := make(map[string]bool, len(cites))
+
+	for i, c := range cites {
+		seen[c.Path+"#"+c.Section] = true
+		seen[c.Path] = true
+		for _, s := range snippets {
+			if s.DocumentPath == c.Path && (c.Section == "" || s.SectionTitle == c.Section) {
+				snip := contextbuilder.RedactSecrets(s.Content)
+				if len(snip) > 200 {
+					snip = snip[:200] + "..."
+				}
+				cites[i].Snippet = strings.TrimSpace(snip)
+				if cites[i].Section == "" {
+					cites[i].Section = s.SectionTitle
+				}
+				break
+			}
+		}
+	}
+
+	for _, b := range blocks {
+		if b.Source == "" || b.Source == "knowledge-graph" || b.Source == "architecture-model" {
+			continue
+		}
+		key := b.Source + "#" + b.Section
+		if seen[key] || (b.Section == "" && seen[b.Source]) {
+			continue
+		}
+		seen[key] = true
+		seen[b.Source] = true
+		cites = append(cites, model.SourceCitation{
+			Path:    b.Source,
+			Section: b.Section,
+			Snippet: b.Snippet,
+		})
+	}
+	return cites
 }
 
 // contextWindowStep rounds the window up so that small prompt size changes do not force Ollama to reload the model.
