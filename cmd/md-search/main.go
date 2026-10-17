@@ -33,7 +33,7 @@ func main() {
 			repo, _ := repository.NewSQLiteRepository(dbPath)
 			se := search.NewSearchEngine(repo)
 			res, _ := se.Search(context.Background(), args[0])
-			
+
 			if jsonOutput {
 				enc := json.NewEncoder(os.Stdout)
 				enc.SetIndent("", "  ")
@@ -72,7 +72,7 @@ func main() {
 			repo, _ := repository.NewSQLiteRepository(dbPath)
 			se := search.NewSearchEngine(repo)
 			res, _ := se.Impact(context.Background(), args[0])
-			
+
 			if jsonOutput {
 				enc := json.NewEncoder(os.Stdout)
 				enc.SetIndent("", "  ")
@@ -94,7 +94,7 @@ func main() {
 			repo, _ := repository.NewSQLiteRepository(dbPath)
 			se := search.NewSearchEngine(repo)
 			res, _ := se.Graph(context.Background(), args[0])
-			
+
 			if jsonOutput {
 				enc := json.NewEncoder(os.Stdout)
 				enc.SetIndent("", "  ")
@@ -109,7 +109,7 @@ func main() {
 	}
 
 	rootCmd.AddCommand(searchCmd, documentCmd, impactCmd, graphCmd)
-	
+
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}

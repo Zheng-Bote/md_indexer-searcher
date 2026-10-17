@@ -15,6 +15,7 @@ import (
 	"github.com/md-indexer/internal/ai/classifier"
 	"github.com/md-indexer/internal/ai/config"
 	"github.com/md-indexer/internal/ai/contextbuilder"
+	"github.com/md-indexer/internal/ai/model"
 	"github.com/md-indexer/internal/ai/provider"
 	"github.com/md-indexer/internal/ai/retriever"
 	"github.com/md-indexer/internal/entities"
@@ -191,5 +192,61 @@ func TestRESTServer_AllEndpoints(t *testing.T) {
 	handlerWithAI.ServeHTTP(wGood, reqGood)
 	if wGood.Code != http.StatusOK {
 		t.Errorf("expected 200 for valid question, got %d: %s", wGood.Code, wGood.Body.String())
+	}
+}
+
+func TestRESTServer_AIModels(t *testing.T) {
+	repo, err := repository.NewSQLiteRepository(":memory:")
+	if err != nil {
+		t.Fatalf("Failed to initialize in-memory repository: %v", err)
+	}
+	defer repo.Close()
+	se := search.NewSearchEngine(repo)
+	active := ActiveModels{Model: "qwen3:14b", EmbeddingModel: "bge-m3"}
+
+	unreachable := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	unreachableURL := unreachable.URL
+	unreachable.Close()
+
+	mock := provider.NewMockProvider("")
+	mock.Models = []model.ModelInfo{{Name: "qwen3:14b", Size: 1, Family: "qwen3"}}
+
+	tests := []struct {
+		name       string
+		server     *Server
+		wantStatus int
+	}{
+		{"AI disabled", NewServer(se), http.StatusNotImplemented},
+		{"Ollama unreachable", NewServer(se).WithModelLister(provider.NewOllamaProvider(unreachableURL, &http.Client{Timeout: time.Second}), active), http.StatusBadGateway},
+		{"Models listed", NewServer(se).WithModelLister(mock, active), http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			tt.server.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/ai/models", nil))
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("expected status %d, got %d: %s", tt.wantStatus, rec.Code, rec.Body.String())
+			}
+			if tt.wantStatus != http.StatusOK {
+				return
+			}
+			var body struct {
+				Success bool `json:"success"`
+				Data    struct {
+					Models []model.ModelInfo `json:"models"`
+					Active ActiveModels      `json:"active"`
+				} `json:"data"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatalf("invalid JSON: %v", err)
+			}
+			if !body.Success || len(body.Data.Models) != 1 || body.Data.Models[0].Name != "qwen3:14b" {
+				t.Errorf("unexpected models payload: %s", rec.Body.String())
+			}
+			if body.Data.Active != active {
+				t.Errorf("expected active %+v, got %+v", active, body.Data.Active)
+			}
+		})
 	}
 }

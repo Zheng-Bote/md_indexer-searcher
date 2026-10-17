@@ -49,12 +49,43 @@ func Terms(query string) []string {
 	return terms
 }
 
+var stemSuffixes = []string{
+	"ierungen", "ierung", "ieren", "iere", "iert",
+	"ungen", "ung", "keiten", "keit", "heiten", "heit",
+	"ischen", "ische", "ischer", "ischem",
+	"en", "er", "es", "em", "st", "te", "ten",
+}
+
+// stemTerm strips common German/English inflectional suffixes when the remaining stem is at least 5 runes long.
+func stemTerm(t string) string {
+	runes := []rune(t)
+	if len(runes) < 6 {
+		return t
+	}
+	for _, suf := range stemSuffixes {
+		if strings.HasSuffix(t, suf) {
+			stem := strings.TrimSuffix(t, suf)
+			if len([]rune(stem)) >= 5 {
+				return stem
+			}
+		}
+	}
+	return t
+}
+
 // ftsMatch builds an FTS5 MATCH expression that ORs the quoted terms.
 // Quoting keeps words like "and", "not" or "near" from being parsed as FTS operators.
+// For terms with >= 5 runes, a stem prefix match ("stem"*) is included so inflected German/English forms
+// (e.g. "konfiguriere" -> "konfigurier"* -> "Konfiguration") match even without vector embeddings.
 func ftsMatch(terms []string) string {
-	quoted := make([]string, len(terms))
+	clauses := make([]string, len(terms))
 	for i, t := range terms {
-		quoted[i] = `"` + t + `"`
+		if len([]rune(t)) >= 5 {
+			stem := stemTerm(t)
+			clauses[i] = `"` + stem + `"*`
+		} else {
+			clauses[i] = `"` + t + `"`
+		}
 	}
-	return strings.Join(quoted, " OR ")
+	return strings.Join(clauses, " OR ")
 }

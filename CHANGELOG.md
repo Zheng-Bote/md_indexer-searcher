@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Hybrid GraphRAG Retriever (`internal/ai/hybrid`, `#14`, `#15`, `#17`):**
+  - Added query-type planner (`fact`, `entity`, `impact`, `architecture`, `exploration`) and German intent classification patterns.
+  - Added section-level FTS5 virtual table (`fts_sections`) with automatic migration backfill, stopword filtering (DE/EN), and column weights (`title: 1.0`, `heading: 0.8`, `tags: 0.7`, `content: 0.5`, `metadata: 0.4`).
+  - Added local Ollama vector embeddings (`internal/embedding`, `section_embeddings` table, incremental embedding in `md-indexer -embed-model`, brute-force cosine similarity in `VectorRetriever` with default `bge-m3`).
+  - Added weighted BFS graph expansion over `entity_relations` (bidirectional), wikilinks, and shared tags (`2–10` notes) with explicit multi-hop `ReasoningChain`s.
+  - Added plan-aware Reciprocal Rank Fusion (`Weights.ForPlan`) boosting graph contributions on `impact` and `architecture` plans.
+  - Added `ArchitectureContext` synthesis for architecture questions, retrieval-time structured `KnowledgeGap{Entity, Reason}` detection, deterministic source attribution from budgeted context blocks, and exposed `Answer.Plan` debug info.
+- **Context Compression & Safety (`internal/ai/contextbuilder`):**
+  - Added Jaccard near-duplicate section filtering ($\ge 0.80$), score-preserving priority sorting, conservative `~3 bytes/token` estimation, and automatic secret redaction (`*_API_KEY`, `*_SECRET`, `*_TOKEN`, `sk-...`, Bearer tokens).
+- **Configuration & Documentation:**
+  - Added YAML configuration loading (`~/.config/md-indexer/ai.yaml`, `./md-ai.yaml`, `--config` / `MD_AI_CONFIG`), full `MD_AI_*` environment variable support in `md-api`, `md-ai.example.yaml`, and `docs/Hybrid_GraphRAG_DE.md`.
+- **Indexer Data Quality & Retrieval Performance:**
+  - Added explicit `entities.document_id` column (with automatic migration backfill and fallback to `documents.title`), case-insensitive title and entity resolution (`COLLATE NOCASE`), German stem/prefix matching in FTS5 (`stemTerm`), and an automatically invalidated in-memory vector cache in `SQLiteVectors`.
+  - Added `-force` flag to `md-indexer` (`IndexerService.WithForce`) to re-parse all Markdown files and purge stale/excluded paths (`_templates_`, `.obsidian`) from `knowledge.db` while preserving existing `section_embeddings`.
+  - Normalized Obsidian wikilink targets (`[[Note|Alias]]`, `[[Note#Heading]]`) in inline links and frontmatter relations, excluded code blocks and inline code spans from link/tag extraction, skipped `_templates_` and hidden folders during indexing/watching, populated the `metadata` table, and added full cascade cleanup in `RemoveDocument`.
+- **CLI Retrieval Ergonomics (`cmd/md-ai`, `#18`):**
+  - Added `md-ai ask --retrieve-only` dry-run mode to inspect query plans, budgeted context sources, reasoning chains, architecture summaries, and knowledge gaps in `<50 ms` without calling Ollama.
+  - Added `md-ai gaps` subcommand (`AuditEntityGaps`) to audit all indexed entities in `knowledge.db` for missing descriptions, missing ADR links/relations, and missing API sections.
+  - Added `--stream` token streaming (`StreamingLLMProvider` / `OllamaProvider.GenerateStream`) for `md-ai ask` and `md-ai chat`.
+
+- **Desktop App (`apps/desktop`, `#19`):**
+  - Added a Tauri v2 + Angular 22 + Spartan-ng desktop client with vault selection (native folder dialog), generation/embedding model selection, and grounded Q&A rendering (sanitized Markdown, sources, knowledge gaps).
+  - The app runs `md-indexer` and `md-api` as sidecars on `127.0.0.1` with one database per vault; changing the vault or a model restarts them. Settings are restored on start.
+  - Added `make desktop-sidecars`, `make desktop-dev` and `make desktop`.
+- **Model Listing (`md-api`):** Added `GET /api/ai/models` (`provider.ModelLister`, `OllamaProvider.ListModels`) returning installed Ollama models and the active models (`501` without `-ai`, `502` when Ollama is unreachable).
+- **Bind Address:** Added `-host` flag to `md-indexer` and `md-api` (e.g. `127.0.0.1`); the default still listens on all interfaces.
+
+### Changed
+- **SQLite Concurrency:** File databases are opened with `journal_mode=WAL` and `busy_timeout=5000` so `md-indexer` and `md-api` can share one database. WAL mode persists in the database file (`-wal`/`-shm` files appear next to it).
+- **Ollama & Model Defaults (`#12`, `#13`, `#16`):**
+  - Aligned classic and hybrid retrievers with the real indexer SQLite schema (`entity_properties`, `documents.title` link resolution).
+  - Changed default LLM model to `qwen3:14b`, lowered default `max_context_tokens` to `4000` for responsive local CPU inference, configured dynamic `num_ctx` window sizing, disabled `think` mode for non-thinking calls, and required answering in the language of the user's question.
+
 ## [v0.2.0] - 2026-10-11
 
 ### Added

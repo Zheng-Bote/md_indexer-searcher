@@ -36,6 +36,14 @@ func TestFTSMatch_QuotesTerms(t *testing.T) {
 	}
 }
 
+func TestFTSMatch_PrefixAndStemming(t *testing.T) {
+	got := ftsMatch([]string{"konfiguriere", "verschlüsselung", "aes"})
+	want := `"konfigur"* OR "verschlüssel"* OR "aes"`
+	if got != want {
+		t.Errorf("ftsMatch() = %q, want %q", got, want)
+	}
+}
+
 func TestPlanner_Plan(t *testing.T) {
 	p := NewPlanner(3)
 	tests := []struct {
@@ -159,5 +167,18 @@ func TestSelectChains_DropsPrefixes(t *testing.T) {
 	}
 	if got := selectChains(fused, chains, 1); len(got) != 1 {
 		t.Errorf("expected limit 1, got %d", len(got))
+	}
+}
+
+func TestWeights_ForPlan(t *testing.T) {
+	base := Weights{FTS: 0.35, Vector: 0.35, Graph: 0.20, Entity: 0.10}
+	if got := base.ForPlan(RetrievalPlan{QueryType: QueryFact}); got.Graph != 0.20 {
+		t.Errorf("fact plan must keep default graph weight 0.20, got %v", got.Graph)
+	}
+	for _, qt := range []QueryType{QueryImpact, QueryArchitecture} {
+		got := base.ForPlan(RetrievalPlan{QueryType: qt})
+		if got.Graph < 0.40 {
+			t.Errorf("%s plan must boost graph weight to >= 0.40, got %v", qt, got.Graph)
+		}
 	}
 }

@@ -4,6 +4,7 @@
 package contextbuilder
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/md-indexer/internal/ai/model"
@@ -29,7 +30,7 @@ func TestContextBuilder_BuildContext(t *testing.T) {
 		t.Fatalf("expected at least 3 context blocks, got %d", len(blocks))
 	}
 
-	// Verify priority ordering: Entity (1) -> Relation (2) -> ADR (3) -> Graph (5) -> FTS (6)
+	// Verify priority ordering: Entity (1) -> Relation (2) -> ADR (3) -> Fused Snippets (4)
 	if blocks[0].Priority != 1 {
 		t.Errorf("expected highest priority 1, got %d", blocks[0].Priority)
 	}
@@ -63,8 +64,8 @@ func TestContextBuilder_Budgeting(t *testing.T) {
 
 func DocumentSnippetStub() []model.DocumentSnippet {
 	return []model.DocumentSnippet{
-		{DocumentPath: "docs/adr.md", Title: "ADR", Strategy: "adr", Content: "Decision details"},
-		{DocumentPath: "docs/fts.md", Title: "FTS", Strategy: "fts", Content: "Search match"},
+		{DocumentPath: "docs/adr.md", Title: "ADR", Strategy: "adr", Content: "Decision details", Score: 0.5},
+		{DocumentPath: "docs/fts.md", Title: "FTS", Strategy: "fts", Content: "Search match", Score: 0.4},
 	}
 }
 
@@ -83,5 +84,54 @@ func TestContextBuilder_ReasoningChains(t *testing.T) {
 	want := "Reasoning chain:\n- [Transformation Engine] --(USES)--> [Encryption]\n- [Encryption] --(DEPENDS_ON)--> [KMS]"
 	if blocks[0].Content != want {
 		t.Errorf("unexpected chain content:\n%s", blocks[0].Content)
+	}
+}
+
+func TestContextBuilder_PreservesScoreOrderAcrossStrategiesAndDropsNearDuplicates(t *testing.T) {
+	res := &model.RetrievalResult{
+		Snippets: []model.DocumentSnippet{
+			{DocumentPath: "low-fts.md", Title: "Low FTS", SectionTitle: "A", Content: "distinct alpha beta gamma content", Score: 0.20, Strategy: "fts"},
+			{DocumentPath: "high-graph.md", Title: "High Graph", SectionTitle: "B", Content: "completely different delta epsilon zeta", Score: 0.80, Strategy: "graph"},
+			{DocumentPath: "high-graph-dup.md", Title: "High Graph", SectionTitle: "B", Content: "completely different delta epsilon zeta", Score: 0.75, Strategy: "vector"},
+		},
+	}
+	blocks := NewContextBuilder(1000).BuildContext(res)
+	if len(blocks) != 2 {
+		t.Fatalf("expected near-duplicate to be dropped (2 blocks left), got %d", len(blocks))
+	}
+	if blocks[0].Source != "high-graph.md" || blocks[1].Source != "low-fts.md" {
+		t.Errorf("expected score order high-graph.md then low-fts.md, got %s then %s", blocks[0].Source, blocks[1].Source)
+	}
+}
+
+func TestContextBuilder_ArchitectureAndSecretRedaction(t *testing.T) {
+	res := &model.RetrievalResult{
+		Architecture: &model.ArchitectureContext{
+			Services:   []string{"Encryption Service"},
+			Components: []string{"REST Delivery"},
+			Pipelines:  []string{"Ingestion Pipeline"},
+		},
+		Snippets: []model.DocumentSnippet{
+			{
+				DocumentPath: "AI/Ollama Ai.md",
+				Title:        "Ollama",
+				SectionTitle: "Setup",
+				Content:      "export OLLAMA_API_KEY=abcdef1234567890secret and token sk-proj1234567890abcdef",
+				Score:        0.9,
+				Strategy:     "fts",
+			},
+		},
+	}
+	cb := NewContextBuilder(1000)
+	blocks := cb.BuildContext(res)
+	formatted := cb.FormatContext(blocks)
+	if !strings.Contains(formatted, "Architecture Context:") || !strings.Contains(formatted, "Services: Encryption Service") {
+		t.Errorf("expected Architecture Context in formatted output, got:\n%s", formatted)
+	}
+	if strings.Contains(formatted, "abcdef1234567890secret") || strings.Contains(formatted, "sk-proj1234567890abcdef") {
+		t.Errorf("expected secrets to be redacted, got:\n%s", formatted)
+	}
+	if !strings.Contains(formatted, "OLLAMA_API_KEY=[REDACTED]") {
+		t.Errorf("expected OLLAMA_API_KEY=[REDACTED], got:\n%s", formatted)
 	}
 }

@@ -10,6 +10,7 @@ It maintains a strict one-way flow of information: Markdown files are the single
 *   **Repository Layer:** Manages the SQLite database and FTS5 search index.
 *   **Search / Graph Engine Layer:** Provides complex query capabilities (BFS, graph traversal) exclusively via the SQLite database.
 *   **API / CLI Layer:** Provides interfaces to the system (`md-search` and `md-api`).
+*   **Client Apps (`apps/`):** Non-Go clients (e.g. `apps/desktop`, Tauri + Angular). They consume the system exclusively via `md-api` over HTTP and may run the Go binaries as local processes.
 
 ## 3. Strict Rules (Must / Must Not / Forbids)
 *   **MUST** treat markdown files as immutable (Read-Only). No bidirectional sync.
@@ -18,6 +19,7 @@ It maintains a strict one-way flow of information: Markdown files are the single
 *   **MUST NOT** bypass the Search/Graph Engine layer to access the database directly from API handlers.
 *   **FORBIDS** the use of global variables for state management.
 *   **FORBIDS** writing any code that violates the standard Go project layout (`cmd/`, `internal/`).
+*   **MUST NOT** access the SQLite database or the vault's Markdown files directly from client apps under `apps/`.
 
 ## 4. Code Standards
 *   **Language:** All code documentation and comments must be in English.

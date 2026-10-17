@@ -13,6 +13,22 @@ type Weights struct {
 	Entity float64
 }
 
+// ForPlan adjusts source weights for the query plan.
+// Impact and architecture queries rely on multi-hop dependencies, so graph weight is boosted
+// to at least max(w.Graph*2, w.FTS) to compete with FTS and vector rankings.
+func (w Weights) ForPlan(plan RetrievalPlan) Weights {
+	if plan.QueryType == QueryImpact || plan.QueryType == QueryArchitecture {
+		boosted := w.Graph * 2
+		if w.FTS > boosted {
+			boosted = w.FTS
+		}
+		if boosted > w.Graph {
+			w.Graph = boosted
+		}
+	}
+	return w
+}
+
 func (w Weights) of(source string) float64 {
 	switch source {
 	case SourceFTS:

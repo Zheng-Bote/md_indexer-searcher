@@ -26,14 +26,16 @@ func (r *SearchRepository) FindEntityByName(ctx context.Context, name string) (*
 		}
 		return nil, err
 	}
-	
+
 	err = r.db.QueryRowContext(ctx, "SELECT name FROM entity_types WHERE id = ?", typeID).Scan(&ent.Type)
 	if err != nil && err != sql.ErrNoRows {
 		return nil, err
 	}
 
 	rows, err := r.db.QueryContext(ctx, "SELECT property_key, property_value FROM entity_properties WHERE entity_id = ?", ent.ID)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	defer rows.Close()
 
 	ent.Properties = make(map[string]string)
@@ -51,7 +53,9 @@ func (r *SearchRepository) FindDocumentByTitle(ctx context.Context, title string
 	var doc entities.Document
 	err := row.Scan(&doc.ID, &doc.Path, &doc.Title)
 	if err != nil {
-		if err == sql.ErrNoRows { return nil, nil }
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
 		return nil, err
 	}
 	return &doc, nil
@@ -63,9 +67,11 @@ func (r *SearchRepository) GetBacklinks(ctx context.Context, targetDocID string)
 		FROM links l 
 		JOIN documents d ON l.source_document_id = d.id 
 		WHERE l.target_document_id = ? OR l.target_document_id = (SELECT title FROM documents WHERE id = ?)`, targetDocID, targetDocID)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	defer rows.Close()
-	
+
 	var links []string
 	for rows.Next() {
 		var title string

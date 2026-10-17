@@ -126,6 +126,13 @@ func TestRetriever_EntityQuery(t *testing.T) {
 			t.Errorf("expected fused score > 0, got %v for %s", s.Score, s.DocumentPath)
 		}
 	}
+	if res.Plan == nil || res.Plan.QueryType != string(QueryEntity) {
+		t.Errorf("expected entity plan info in result, got %+v", res.Plan)
+	}
+	// Encryption Service has an API section and description, but no ADR relation or link -> 1 ADR gap.
+	if len(res.Gaps) != 1 || res.Gaps[0].Entity != "Encryption Service" {
+		t.Errorf("expected ADR knowledge gap for Encryption Service, got %+v", res.Gaps)
+	}
 }
 
 func TestRetriever_ArchitectureQueryExpandsGraph(t *testing.T) {
@@ -145,6 +152,12 @@ func TestRetriever_ArchitectureQueryExpandsGraph(t *testing.T) {
 	}
 	if got["docs/components/encryption-service.md#Overview"] != SourceGraph {
 		t.Errorf("expected encryption service via 2-hop graph, got %v", got)
+	}
+	if res.Architecture == nil {
+		t.Fatalf("expected ArchitectureContext on architecture query")
+	}
+	if len(res.Architecture.Pipelines) == 0 || len(res.Architecture.Services) == 0 || len(res.Architecture.Components) == 0 {
+		t.Errorf("expected pipelines, services and components in ArchitectureContext, got %+v", res.Architecture)
 	}
 }
 
@@ -210,5 +223,136 @@ func TestSQLiteFTS_TitleOutranksContent(t *testing.T) {
 	// "REST Delivery" title match must outrank the ingestion section that only mentions it in content.
 	if cands[0].DocumentID != "doc-delivery" {
 		t.Errorf("expected title match first, got %s", cands[0].DocumentID)
+	}
+}
+
+func TestRetriever_EntityDocumentIDMismatch(t *testing.T) {
+	repo, err := repository.NewSQLiteRepository(filepath.Join(t.TempDir(), "knowledge.db"))
+	if err != nil {
+		t.Fatalf("failed to init repository: %v", err)
+	}
+	t.Cleanup(func() { repo.Close() })
+
+	// EntityName ("MQTT Broker") differs from document Title ("01 - MQTT Broker Setup").
+	doc := &entities.Document{
+		ID:    "doc-mqtt",
+		Path:  "docs/services/mqtt.md",
+		Title: "01 - MQTT Broker Setup",
+		Sections: []entities.Section{
+			{ID: "mqtt-1", Heading: "Konfiguration", Level: 2, Content: "Port 1883 und TLS-Konfiguration für den Broker."},
+		},
+		IsEntity:         true,
+		EntityType:       "Service",
+		EntityName:       "MQTT Broker",
+		EntityProperties: map[string]string{"description": "Central message broker"},
+	}
+	if err := repo.UpsertDocument(context.Background(), doc); err != nil {
+		t.Fatalf("failed to upsert doc: %v", err)
+	}
+
+	r := NewSQLiteRetriever(repo.GetDB(), 3, nil, testWeights, 25, 25)
+	res, err := r.Retrieve(context.Background(), "Wie konfiguriere ich den MQTT Broker?", model.IntentEntity)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(res.Entities) != 1 || res.Entities[0].DocumentURI != "docs/services/mqtt.md" {
+		t.Fatalf("expected entity resolved via entities.document_id to docs/services/mqtt.md, got %+v", res.Entities)
+	}
+	if len(res.Snippets) == 0 || res.Snippets[0].DocumentPath != "docs/services/mqtt.md" {
+		t.Errorf("expected section from docs/services/mqtt.md, got %+v", res.Snippets)
+	}
+}
+
+func TestSQLiteFTS_GermanStemPrefixMatch(t *testing.T) {
+	repo, err := repository.NewSQLiteRepository(filepath.Join(t.TempDir(), "knowledge.db"))
+	if err != nil {
+		t.Fatalf("failed to init repository: %v", err)
+	}
+	t.Cleanup(func() { repo.Close() })
+
+	doc := &entities.Document{
+		ID:    "doc-cfg",
+		Path:  "docs/config.md",
+		Title: "Systemhandbuch",
+		Sections: []entities.Section{
+			{ID: "cfg-1", Heading: "Konfiguration", Level: 2, Content: "Die Verschlüsselungsverfahren werden hier beschrieben."},
+		},
+	}
+	if err := repo.UpsertDocument(context.Background(), doc); err != nil {
+		t.Fatalf("failed to upsert doc: %v", err)
+	}
+
+	// "konfiguriere" stems to "konfigur"* -> matches "Konfiguration";
+	// "verschlüsselung" stems to "verschlüssel"* -> matches "Verschlüsselungsverfahren".
+	cands, err := NewSQLiteFTS(repo.GetDB()).Search(context.Background(), Terms("Wie konfiguriere ich die Verschlüsselung?"), 10)
+	if err != nil {
+		t.Fatalf("search failed: %v", err)
+	}
+	if len(cands) != 1 || cands[0].SectionID != "cfg-1" {
+		t.Errorf("expected stem prefix match on cfg-1, got %+v", cands)
+	}
+}
+
+func TestRetriever_CaseInsensitiveLinksAndRelations(t *testing.T) {
+	repo, err := repository.NewSQLiteRepository(filepath.Join(t.TempDir(), "knowledge.db"))
+	if err != nil {
+		t.Fatalf("failed to init repository: %v", err)
+	}
+	t.Cleanup(func() { repo.Close() })
+
+	docs := []*entities.Document{
+		{
+			ID:    "doc-mqtt",
+			Path:  "docs/services/mqtt-broker.md",
+			Title: "MQTT Broker",
+			Sections: []entities.Section{
+				{ID: "mqtt-api", Heading: "API", Level: 2, Content: "Pub/Sub endpoint on port 1883."},
+			},
+			IsEntity:         true,
+			EntityType:       "Service",
+			EntityName:       "MQTT Broker",
+			EntityProperties: map[string]string{"description": "Central MQTT broker"},
+		},
+		{
+			ID:    "doc-fhem",
+			Path:  "docs/services/fhem.md",
+			Title: "FHEM Server",
+			Sections: []entities.Section{
+				{ID: "fhem-1", Heading: "Overview", Level: 2, Content: "Home automation server linking to [[mqtt broker]]."},
+			},
+			// Lowercase link target and lowercase entity relation target must still resolve to "MQTT Broker".
+			Links:            []entities.Link{{SourceDocID: "doc-fhem", TargetDocID: "mqtt broker"}},
+			IsEntity:         true,
+			EntityType:       "Service",
+			EntityName:       "FHEM Server",
+			EntityProperties: map[string]string{"description": "FHEM automation"},
+			EntityRelations:  []entities.EntityRelation{{SourceID: "FHEM Server", TargetID: "mqtt broker", Type: "USES"}},
+		},
+	}
+	for _, d := range docs {
+		if err := repo.UpsertDocument(context.Background(), d); err != nil {
+			t.Fatalf("failed to upsert %s: %v", d.Path, err)
+		}
+	}
+
+	g := NewSQLiteGraph(repo.GetDB())
+	res, err := g.Expand(context.Background(), []string{"doc-fhem"}, 1, 10)
+	if err != nil {
+		t.Fatalf("graph expand failed: %v", err)
+	}
+	if len(res.Candidates) == 0 || res.Candidates[0].DocumentID != "doc-mqtt" {
+		t.Fatalf("expected case-insensitive graph expansion to reach doc-mqtt, got %+v", res.Candidates)
+	}
+}
+
+func TestAuditEntityGaps(t *testing.T) {
+	db := setupDB(t)
+	gaps, err := AuditEntityGaps(context.Background(), db)
+	if err != nil {
+		t.Fatalf("AuditEntityGaps failed: %v", err)
+	}
+	// setupDB has "Encryption Service" (Component) with description and API section, but no ADR linked.
+	if len(gaps) != 1 || gaps[0].Entity != "Encryption Service" {
+		t.Errorf("expected 1 ADR gap for Encryption Service, got %+v", gaps)
 	}
 }

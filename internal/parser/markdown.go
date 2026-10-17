@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/md-indexer/internal/entities"
 	"github.com/yuin/goldmark"
@@ -21,8 +22,9 @@ import (
 )
 
 var (
-	wikilinkRegex = regexp.MustCompile(`\[\[(.*?)\]\]`)
-	tagRegex      = regexp.MustCompile(`(?:^|\s)#([a-zA-Z0-9_\-]+)`)
+	wikilinkRegex   = regexp.MustCompile(`\[\[(.*?)\]\]`)
+	tagRegex        = regexp.MustCompile(`(?:^|\s)#([a-zA-Z0-9_\-]+)`)
+	inlineCodeRegex = regexp.MustCompile("`[^`]*`")
 )
 
 type Parser struct {
@@ -77,12 +79,12 @@ func (p *Parser) extractAST(doc *entities.Document, content []byte) {
 		for k, v := range metaData {
 			doc.Metadata[k] = v
 		}
-		
+
 		// Entity Extraction Logic
 		if typeVal, ok := doc.Metadata["type"].(string); ok && typeVal != "" {
 			doc.IsEntity = true
 			doc.EntityType = typeVal
-			
+
 			if nameVal, ok := doc.Metadata["name"].(string); ok && nameVal != "" {
 				doc.EntityName = nameVal
 			} else {
@@ -90,8 +92,10 @@ func (p *Parser) extractAST(doc *entities.Document, content []byte) {
 			}
 
 			for k, v := range doc.Metadata {
-				if k == "type" || k == "name" { continue }
-				
+				if k == "type" || k == "name" {
+					continue
+				}
+
 				switch val := v.(type) {
 				case string:
 					doc.EntityProperties[k] = val
@@ -101,10 +105,13 @@ func (p *Parser) extractAST(doc *entities.Document, content []byte) {
 					// If it's a list, treat as relation (e.g. uses: [A, B])
 					for _, item := range val {
 						if targetStr, ok := item.(string); ok {
-							// We use names as target IDs for relations for now, since we might not know their hash yet
+							target := normalizeLinkTarget(targetStr)
+							if target == "" {
+								continue
+							}
 							doc.EntityRelations = append(doc.EntityRelations, entities.EntityRelation{
-								SourceID: doc.EntityName, // Temporarily use name as ID linking
-								TargetID: targetStr,
+								SourceID: doc.EntityName,
+								TargetID: target,
 								Type:     strings.ToUpper(k),
 							})
 						}
@@ -162,7 +169,6 @@ func (p *Parser) extractAST(doc *entities.Document, content []byte) {
 				sb.Write(line.Value(content))
 			}
 			codeText := sb.String()
-			p.extractLinksAndTags(doc, codeText)
 
 			idx := ensureSection()
 			doc.Sections[idx].Content += "```\n" + codeText + "```\n\n"
@@ -175,7 +181,6 @@ func (p *Parser) extractAST(doc *entities.Document, content []byte) {
 				sb.Write(line.Value(content))
 			}
 			codeText := sb.String()
-			p.extractLinksAndTags(doc, codeText)
 
 			idx := ensureSection()
 			doc.Sections[idx].Content += codeText + "\n\n"
@@ -205,11 +210,14 @@ func (p *Parser) extractAST(doc *entities.Document, content []byte) {
 }
 
 func (p *Parser) extractLinksAndTags(doc *entities.Document, rawText string) {
-	// Extract inline Wikilinks [[Target]]
-	matches := wikilinkRegex.FindAllStringSubmatch(rawText, -1)
+	// Strip inline code spans so backticked expressions like `[[which treefrog]]` or `#include` are ignored.
+	cleanText := inlineCodeRegex.ReplaceAllString(rawText, " ")
+
+	// Extract inline Wikilinks [[Target]], [[Target|Alias]], [[Target#Heading]]
+	matches := wikilinkRegex.FindAllStringSubmatch(cleanText, -1)
 	for _, m := range matches {
 		if len(m) > 1 {
-			target := strings.TrimSpace(m[1])
+			target := normalizeLinkTarget(m[1])
 			if target != "" {
 				doc.Links = append(doc.Links, entities.Link{
 					SourceDocID: doc.ID,
@@ -226,12 +234,12 @@ func (p *Parser) extractLinksAndTags(doc *entities.Document, rawText string) {
 		}
 	}
 
-	// Extract inline hashtags #tag
-	tagMatches := tagRegex.FindAllStringSubmatch(rawText, -1)
+	// Extract inline hashtags #tag (ignoring purely numeric tags like #1)
+	tagMatches := tagRegex.FindAllStringSubmatch(cleanText, -1)
 	for _, tm := range tagMatches {
 		if len(tm) > 1 {
 			tag := strings.TrimSpace(tm[1])
-			if tag != "" {
+			if tag != "" && !isAllDigits(tag) {
 				found := false
 				for _, existing := range doc.Tags {
 					if existing == tag {
@@ -245,6 +253,39 @@ func (p *Parser) extractLinksAndTags(doc *entities.Document, rawText string) {
 			}
 		}
 	}
+}
+
+// normalizeLinkTarget extracts the canonical note title from a wikilink or frontmatter relation target
+// (e.g. "[[folder/MQTT Broker#Setup|Broker]]" -> "MQTT Broker").
+func normalizeLinkTarget(raw string) string {
+	s := strings.TrimSpace(raw)
+	if strings.HasPrefix(s, "[[") && strings.HasSuffix(s, "]]") {
+		s = strings.TrimSpace(s[2 : len(s)-2])
+	}
+	if idx := strings.Index(s, "|"); idx >= 0 {
+		s = s[:idx]
+	}
+	if idx := strings.Index(s, "#"); idx >= 0 {
+		s = s[:idx]
+	}
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	if idx := strings.LastIndexAny(s, `/\`); idx >= 0 {
+		s = s[idx+1:]
+	}
+	s = strings.TrimSuffix(s, ".md")
+	return strings.TrimSpace(s)
+}
+
+func isAllDigits(s string) bool {
+	for _, r := range s {
+		if !unicode.IsDigit(r) {
+			return false
+		}
+	}
+	return len(s) > 0
 }
 
 func parserContext() gmparser.Context {

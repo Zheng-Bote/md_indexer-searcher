@@ -28,6 +28,9 @@ func NewWatcher(dir string, indexer *service.IndexerService) (*Watcher, error) {
 	// Add all subdirectories
 	err = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if info != nil && info.IsDir() {
+			if path != dir && service.ShouldSkipPath(path) {
+				return filepath.SkipDir
+			}
 			return fsw.Add(path)
 		}
 		return nil
@@ -50,7 +53,7 @@ func (w *Watcher) Start() {
 			if !ok {
 				return
 			}
-			if !strings.HasSuffix(strings.ToLower(event.Name), ".md") {
+			if !strings.HasSuffix(strings.ToLower(event.Name), ".md") || service.ShouldSkipPath(event.Name) {
 				continue
 			}
 

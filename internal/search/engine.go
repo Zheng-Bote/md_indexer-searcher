@@ -47,28 +47,36 @@ func (e *engineImpl) FindDocument(ctx context.Context, name string) (*entities.D
 
 func (e *engineImpl) Backlinks(ctx context.Context, name string) ([]string, error) {
 	doc, err := e.FindDocument(ctx, name)
-	if err != nil || doc == nil { return []string{}, err }
+	if err != nil || doc == nil {
+		return []string{}, err
+	}
 	return e.sRepo.GetBacklinks(ctx, doc.ID)
 }
 
 func (e *engineImpl) Relations(ctx context.Context, name string) ([]entities.EntityRelation, error) {
 	ent, err := e.FindEntity(ctx, name)
-	if err != nil || ent == nil { return nil, err }
-	
+	if err != nil || ent == nil {
+		return nil, err
+	}
+
 	// Return direct outgoing relations
 	return e.graph.DirectRelations(ctx, ent.ID)
 }
 
 func (e *engineImpl) Impact(ctx context.Context, name string) ([]entities.GraphEdge, error) {
 	ent, err := e.FindEntity(ctx, name)
-	if err != nil || ent == nil { return nil, err }
-	
+	if err != nil || ent == nil {
+		return nil, err
+	}
+
 	return e.graph.ImpactAnalysis(ctx, ent.ID)
 }
 
 func (e *engineImpl) Graph(ctx context.Context, name string) ([]entities.GraphEdge, error) {
 	ent, err := e.FindEntity(ctx, name)
-	if err != nil || ent == nil { return nil, err }
-	
+	if err != nil || ent == nil {
+		return nil, err
+	}
+
 	return e.graph.DependencyTree(ctx, ent.ID)
 }

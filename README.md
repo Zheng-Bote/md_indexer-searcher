@@ -18,6 +18,7 @@ The system is based on the principles of **Clean Architecture**:
 ```mermaid
 erDiagram
     documents ||--o{ sections : "contains"
+    sections ||--o| section_embeddings : "embedded as"
     documents ||--o{ links : "source"
     documents ||--o{ document_tags : "has"
     tags ||--o{ document_tags : "has"
@@ -42,6 +43,14 @@ erDiagram
         string heading
         int level
         text content
+    }
+    section_embeddings {
+        string section_id PK
+        blob embedding
+        int dimensions
+        string model
+        string content_hash
+        datetime created_at
     }
     links {
         string source_document_id FK
@@ -88,20 +97,27 @@ graph TD
     FS[File System\nMarkdown Files] --> Watcher
     Watcher --> IndexerService[Indexer Service]
     IndexerService --> Parser[Markdown Parser & Extractor]
+    IndexerService --> Embedder[Incremental Embedder\ninternal/embedding]
     IndexerService --> Repo[SQLite Repository]
-    Repo --> DB[(knowledge.db\nSQLite + FTS5)]
+    Embedder <--> OllamaEmbed[Local Ollama Embeddings\ne.g. bge-m3]
+    Embedder --> Repo
+    Repo --> DB[(knowledge.db\nSQLite + FTS5 + Embeddings)]
     
     DB --> SearchEngine[Search / Graph Engine]
     SearchEngine --> API[md-api\nREST Server]
     SearchEngine --> CLI[md-search\nCLI Tool]
     
-    DB --> AIAssistant[md-ai\nGrounded AI / RAG]
-    Ollama[Local Ollama\ne.g. qwen3:14b] <--> AIAssistant
+    DB --> HybridRetriever[Hybrid GraphRAG Retriever\nPlanner + FTS + Entities + Vectors + Graph + RRF]
+    HybridRetriever --> ContextBuilder[Context Builder\nDedup + Secret Redaction + Budget]
+    ContextBuilder --> AIAssistant[md-ai\nGrounded AI / RAG]
+    Ollama[Local Ollama LLM\ne.g. qwen3:14b] <--> AIAssistant
 
     Client[Web / UI Client] --> API
     User[Terminal User] --> CLI
     User --> AIAssistant
 ```
+
+*(See [`docs/Hybrid_GraphRAG_DE.md`](docs/Hybrid_GraphRAG_DE.md) and [`md-ai.example.yaml`](md-ai.example.yaml) for detailed Hybrid GraphRAG architecture, configuration, and query-class walkthroughs).*
 
 ## Setup & Build
 
@@ -135,6 +151,10 @@ Indexes a folder recursively and monitors it for future changes.
 
 ```bash
 ./bin/md-indexer -dir /path/to/obsidian/vault -db index.db -port 8080
+
+# Force re-parsing all notes and purging excluded (_templates_, .obsidian) or deleted paths
+# without dropping existing section_embeddings:
+./bin/md-indexer -dir /path/to/obsidian/vault -db index.db -force
 ```
 
 ### 2. md-search (CLI Explorer)
@@ -184,8 +204,23 @@ make api-run
 - `GET /api/backlinks/{name}`: Find documents that link to `{name}`
 - `GET /api/impact/{name}`: Recursive impact analysis for an entity
 - `GET /api/graph/{name}`: Recursive dependency tree for an entity
+- `POST /api/ai/ask`: Grounded AI answer (requires `-ai`)
+- `GET /api/ai/models`: Installed Ollama models and the active generation/embedding model (requires `-ai`)
+
+Use `-host 127.0.0.1` to listen on localhost only (`md-indexer` accepts the same flag).
 
 *(The exact specification is documented in the included `openapi.yaml` file).*
+
+### 4. Desktop App (`apps/desktop`)
+
+A Tauri v2 + Angular + Spartan-ng desktop client: pick a vault folder, choose the generation and embedding model, and ask questions. It runs `md-indexer` and `md-api` as local sidecars (bound to `127.0.0.1`) and keeps one database per vault in the app data directory. Any change of vault or model restarts the sidecars.
+
+```bash
+make desktop-dev   # build sidecars and start the app in dev mode
+make desktop       # build installable bundles
+```
+
+Prerequisites: Go, Node.js, Rust and the [Tauri system dependencies](https://v2.tauri.app/start/prerequisites/) (on Debian/Ubuntu: `libwebkit2gtk-4.1-dev`, `build-essential`, `libssl-dev`, `libayatana-appindicator3-dev`, `librsvg2-dev`, `libxdo-dev`, `pkg-config`), plus a running Ollama instance. See `apps/desktop/README.md`.
 
 ## Example Use Case & Walkthrough
 
@@ -267,9 +302,19 @@ Sources:
 - examples/vault/TokenSigner.md
 ```
 
-#### JSON Output (For Automation / Scripting)
+#### JSON Output, Dry-Run Retrieval (`--retrieve-only`), Streaming (`--stream`) & Gap Audit (`gaps`)
 ```bash
+# Structured JSON output (for automation / scripting)
 ./bin/md-ai ask "What happens if UserDatabase is modified?" --db knowledge.db --json
+
+# Fast retrieval inspection (<50 ms) without calling the LLM
+./bin/md-ai ask "What happens if UserDatabase is modified?" --db knowledge.db --retrieve-only
+
+# Stream generated tokens live on CPU
+./bin/md-ai ask "How does the authentication flow work?" --db knowledge.db --stream
+
+# Audit all indexed Service, Component, and Pipeline entities for documentation gaps
+./bin/md-ai gaps --db knowledge.db
 ```
 
 #### Interactive Terminal Session (`chat`)

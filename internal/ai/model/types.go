@@ -44,14 +44,44 @@ type EntityRelationMatch struct {
 	DocumentURI  string `json:"document_uri"`
 }
 
+// KnowledgeGap represents a missing piece of documentation or architecture knowledge for an entity.
+type KnowledgeGap struct {
+	Entity string `json:"entity"`
+	Reason string `json:"reason"`
+}
+
+// RetrievalPlanInfo exposes the executed retrieval plan for debugging and JSON output.
+type RetrievalPlanInfo struct {
+	QueryType   string `json:"query_type"`
+	UseFTS      bool   `json:"use_fts"`
+	UseEntities bool   `json:"use_entities"`
+	UseGraph    bool   `json:"use_graph"`
+	UseVectors  bool   `json:"use_vectors"`
+	GraphDepth  int    `json:"graph_depth"`
+	MaxResults  int    `json:"max_results"`
+}
+
+// ArchitectureContext summarizes architectural building blocks discovered during retrieval.
+type ArchitectureContext struct {
+	Services     []string              `json:"services,omitempty"`
+	Components   []string              `json:"components,omitempty"`
+	Pipelines    []string              `json:"pipelines,omitempty"`
+	ADRs         []string              `json:"adrs,omitempty"`
+	Entities     []string              `json:"entities,omitempty"`
+	Dependencies []EntityRelationMatch `json:"dependencies,omitempty"`
+}
+
 // RetrievalResult holds all evidence retrieved from the knowledge base.
 type RetrievalResult struct {
-	Query     string                `json:"query"`
-	Intent    Intent                `json:"intent"`
-	Snippets  []DocumentSnippet     `json:"snippets"`
-	Entities  []EntityMatch         `json:"entities"`
-	Relations []EntityRelationMatch `json:"relations"`
-	Chains    []ReasoningChain      `json:"chains,omitempty"`
+	Query        string                `json:"query"`
+	Intent       Intent                `json:"intent"`
+	Plan         *RetrievalPlanInfo    `json:"plan,omitempty"`
+	Architecture *ArchitectureContext  `json:"architecture,omitempty"`
+	Snippets     []DocumentSnippet     `json:"snippets"`
+	Entities     []EntityMatch         `json:"entities"`
+	Relations    []EntityRelationMatch `json:"relations"`
+	Chains       []ReasoningChain      `json:"chains,omitempty"`
+	Gaps         []KnowledgeGap        `json:"gaps,omitempty"`
 }
 
 // ReasoningStep is one directed edge of a reasoning chain, e.g. "Transformation Engine" USES "Encryption".
@@ -68,10 +98,13 @@ type ReasoningChain struct {
 
 // ContextBlock represents a prioritized and formatted piece of evidence for prompt assembly.
 type ContextBlock struct {
-	Priority int    `json:"priority"` // 1 (Highest) to 6 (Lowest)
-	Source   string `json:"source"`
-	Content  string `json:"content"`
-	Tokens   int    `json:"tokens"`
+	Priority int     `json:"priority"` // 1 (Highest) to 6 (Lowest)
+	Score    float64 `json:"score,omitempty"`
+	Source   string  `json:"source"`
+	Section  string  `json:"section,omitempty"`
+	Snippet  string  `json:"snippet,omitempty"`
+	Content  string  `json:"content"`
+	Tokens   int     `json:"tokens"`
 }
 
 // GenerateRequest represents the request passed to an LLM provider.
@@ -93,6 +126,13 @@ type GenerateResponse struct {
 	OutputTokens int    `json:"output_tokens,omitempty"`
 }
 
+// ModelInfo describes a model installed in the LLM backend.
+type ModelInfo struct {
+	Name   string `json:"name"`
+	Size   int64  `json:"size"`
+	Family string `json:"family,omitempty"`
+}
+
 // SourceCitation represents a cited document or section in the answer.
 type SourceCitation struct {
 	Path    string `json:"path"`
@@ -102,10 +142,11 @@ type SourceCitation struct {
 
 // Answer represents the final grounded answer returned to the user or caller.
 type Answer struct {
-	Question string           `json:"question"`
-	Answer   string           `json:"answer"`
-	Intent   Intent           `json:"intent"`
-	Model    string           `json:"model"`
-	Sources  []SourceCitation `json:"sources"`
-	Gaps     []string         `json:"gaps,omitempty"`
+	Question string             `json:"question"`
+	Answer   string             `json:"answer"`
+	Intent   Intent             `json:"intent"`
+	Plan     *RetrievalPlanInfo `json:"plan,omitempty"`
+	Model    string             `json:"model"`
+	Sources  []SourceCitation   `json:"sources"`
+	Gaps     []KnowledgeGap     `json:"gaps,omitempty"`
 }

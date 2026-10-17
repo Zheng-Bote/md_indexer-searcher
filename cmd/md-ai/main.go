@@ -20,14 +20,18 @@ import (
 	"github.com/md-indexer/internal/ai/config"
 	"github.com/md-indexer/internal/ai/contextbuilder"
 	"github.com/md-indexer/internal/ai/conversation"
+	"github.com/md-indexer/internal/ai/hybrid"
 	"github.com/md-indexer/internal/ai/model"
 	"github.com/md-indexer/internal/ai/provider"
 	_ "modernc.org/sqlite"
 )
 
 var (
-	cfg     = config.DefaultConfig()
-	rootCmd = &cobra.Command{
+	cfgFile      string
+	retrieveOnly bool
+	streamOutput bool
+	cfg          = config.DefaultConfig()
+	rootCmd      = &cobra.Command{
 		Use:   "md-ai",
 		Short: "Grounded local AI assistant over Markdown knowledge bases",
 		Long: `md-ai is a local, grounded AI retrieval-augmented generation (RAG) assistant
@@ -36,8 +40,10 @@ that queries Markdown notes indexed in SQLite knowledge.db using local LLMs (Oll
 )
 
 func init() {
+	_ = cfg.LoadDefaultFiles()
 	cfg.LoadFromEnv()
 
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "Path to YAML configuration file (defaults to ~/.config/md-indexer/ai.yaml and ./md-ai.yaml)")
 	rootCmd.PersistentFlags().StringVar(&cfg.DBPath, "db", cfg.DBPath, "Path to SQLite knowledge database")
 	rootCmd.PersistentFlags().StringVar(&cfg.OllamaHost, "ollama-host", cfg.OllamaHost, "Ollama API host URL")
 	rootCmd.PersistentFlags().StringVarP(&cfg.Model, "model", "m", cfg.Model, "LLM model name")
@@ -50,13 +56,22 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&cfg.EmbeddingModel, "embedding-model", cfg.EmbeddingModel, "Ollama embedding model; must match the indexer's -embed-model")
 	rootCmd.PersistentFlags().IntVar(&cfg.TimeoutSeconds, "timeout", cfg.TimeoutSeconds, "LLM request timeout in seconds")
 	rootCmd.PersistentFlags().BoolVar(&cfg.JSONOutput, "json", cfg.JSONOutput, "Output response in JSON format")
+	rootCmd.PersistentFlags().BoolVar(&streamOutput, "stream", false, "Stream generated tokens incrementally in text mode")
+
+	askCmd.Flags().BoolVar(&retrieveOnly, "retrieve-only", false, "Execute query planning, retrieval, and context budgeting without calling the LLM")
 
 	rootCmd.AddCommand(askCmd)
 	rootCmd.AddCommand(chatCmd)
+	rootCmd.AddCommand(gapsCmd)
 	rootCmd.AddCommand(versionCmd)
 }
 
 func initAssistant() (*assistant.Assistant, *sql.DB, error) {
+	if cfgFile != "" {
+		if err := cfg.LoadFromFile(cfgFile); err != nil {
+			return nil, nil, fmt.Errorf("failed to load config %s: %w", cfgFile, err)
+		}
+	}
 	if err := cfg.Validate(); err != nil {
 		return nil, nil, fmt.Errorf("invalid configuration: %w", err)
 	}
@@ -92,6 +107,29 @@ var askCmd = &cobra.Command{
 		ctx := cmd.Context()
 		if ctx == nil {
 			ctx = context.Background()
+		}
+
+		if retrieveOnly {
+			ans, err := asst.RetrieveOnly(ctx, question)
+			if err != nil {
+				return fmt.Errorf("error retrieving context: %w", err)
+			}
+			if cfg.JSONOutput {
+				enc := json.NewEncoder(os.Stdout)
+				enc.SetIndent("", "  ")
+				return enc.Encode(ans)
+			}
+			printFormattedAnswer(ans)
+			return nil
+		}
+
+		if streamOutput && !cfg.JSONOutput {
+			ans, err := runStreamingAsk(ctx, asst, question, nil)
+			if err != nil {
+				return fmt.Errorf("error generating answer: %w", err)
+			}
+			printSourcesAndGaps(ans)
+			return nil
 		}
 
 		ans, err := asst.Ask(ctx, question, nil)
@@ -148,6 +186,18 @@ var chatCmd = &cobra.Command{
 				break
 			}
 
+			if streamOutput && !cfg.JSONOutput {
+				fmt.Println()
+				ans, err := runStreamingAsk(ctx, asst, query, session)
+				if err != nil {
+					fmt.Printf("[Error] %v\n\n", err)
+					continue
+				}
+				printSourcesAndGaps(ans)
+				fmt.Println()
+				continue
+			}
+
 			ans, err := asst.Ask(ctx, query, session)
 			if err != nil {
 				fmt.Printf("[Error] %v\n\n", err)
@@ -162,6 +212,44 @@ var chatCmd = &cobra.Command{
 	},
 }
 
+var gapsCmd = &cobra.Command{
+	Use:   "gaps",
+	Short: "Audit the indexed knowledge base for entity documentation gaps",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		_, db, err := initAssistant()
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+
+		ctx := cmd.Context()
+		if ctx == nil {
+			ctx = context.Background()
+		}
+
+		gapsList, err := hybrid.AuditEntityGaps(ctx, db)
+		if err != nil {
+			return fmt.Errorf("failed to audit entity gaps: %w", err)
+		}
+
+		if cfg.JSONOutput {
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			return enc.Encode(gapsList)
+		}
+
+		if len(gapsList) == 0 {
+			fmt.Println("No entity documentation gaps detected.")
+			return nil
+		}
+		fmt.Printf("Detected %d entity documentation gap(s):\n", len(gapsList))
+		for _, g := range gapsList {
+			fmt.Printf("- [%s] %s\n", g.Entity, g.Reason)
+		}
+		return nil
+	},
+}
+
 var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print md-ai version",
@@ -170,9 +258,33 @@ var versionCmd = &cobra.Command{
 	},
 }
 
+func runStreamingAsk(ctx context.Context, asst *assistant.Assistant, question string, session *conversation.Session) (*model.Answer, error) {
+	ans, err := asst.AskStream(
+		ctx,
+		question,
+		session,
+		func(plan *model.RetrievalPlanInfo, blocks int) {
+			if plan != nil {
+				fmt.Printf("[Plan: %s | Context blocks: %d]\n\n", plan.QueryType, blocks)
+			}
+		},
+		func(token string) {
+			fmt.Print(token)
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Println()
+	return ans, nil
+}
+
 func printFormattedAnswer(ans *model.Answer) {
 	fmt.Printf("%s\n", ans.Answer)
+	printSourcesAndGaps(ans)
+}
 
+func printSourcesAndGaps(ans *model.Answer) {
 	if len(ans.Sources) > 0 {
 		fmt.Printf("\nSources:\n")
 		for _, s := range ans.Sources {
@@ -190,7 +302,11 @@ func printFormattedAnswer(ans *model.Answer) {
 	if len(ans.Gaps) > 0 {
 		fmt.Printf("\nKnowledge Gaps:\n")
 		for _, g := range ans.Gaps {
-			fmt.Printf("- %s\n", g)
+			if g.Entity != "" && g.Entity != "general" {
+				fmt.Printf("- [%s] %s\n", g.Entity, g.Reason)
+			} else {
+				fmt.Printf("- %s\n", g.Reason)
+			}
 		}
 	}
 }

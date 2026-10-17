@@ -67,7 +67,7 @@ func (r *Retriever) retrieveEntitiesAndRelations(ctx context.Context, query stri
 	// Entity query
 	entityQuery := `
 		SELECT e.name, COALESCE(t.name, e.type_id, ''),
-			COALESCE((SELECT d.path FROM documents d WHERE d.title = e.id LIMIT 1), ''),
+			COALESCE((SELECT d.path FROM documents d WHERE d.title = e.id COLLATE NOCASE LIMIT 1), ''),
 			COALESCE((SELECT p.property_value FROM entity_properties p WHERE p.entity_id = e.id AND p.property_key = 'description' LIMIT 1), '')
 		FROM entities e
 		LEFT JOIN entity_types t ON t.id = e.type_id
@@ -99,9 +99,9 @@ func (r *Retriever) retrieveEntitiesAndRelations(ctx context.Context, query stri
 	if len(res.Entities) > 0 {
 		relQuery := `
 			SELECT r.source_entity_id, r.relation_type, r.target_entity_id,
-				COALESCE((SELECT d.path FROM documents d WHERE d.title = r.source_entity_id LIMIT 1), '')
+				COALESCE((SELECT d.path FROM documents d WHERE d.title = r.source_entity_id COLLATE NOCASE LIMIT 1), '')
 			FROM entity_relations r
-			WHERE r.source_entity_id = ? OR r.target_entity_id = ?
+			WHERE r.source_entity_id = ? COLLATE NOCASE OR r.target_entity_id = ? COLLATE NOCASE
 			LIMIT 15;
 		`
 		for _, e := range res.Entities {
@@ -208,7 +208,7 @@ func (r *Retriever) retrieveGraphNeighbors(ctx context.Context, res *model.Retri
 			-- links.target_document_id holds the raw wikilink target; resolve it via the document title.
 			SELECT l.source_document_id, d.id
 			FROM links l
-			JOIN documents d ON d.title = l.target_document_id
+			JOIN documents d ON d.title = l.target_document_id COLLATE NOCASE
 		),
 		start(id) AS (
 			SELECT id FROM documents WHERE path = ?1

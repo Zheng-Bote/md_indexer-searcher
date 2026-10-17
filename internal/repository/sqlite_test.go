@@ -4,7 +4,9 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -229,13 +231,37 @@ func TestSQLiteRepository_CRUD_Search_AndBacklinks(t *testing.T) {
 		t.Errorf("Expected nil for non-existent document, got %v, err: %v", ghostDoc, err)
 	}
 
-	// 5. RemoveDocument
+	doc1.Metadata = map[string]interface{}{"author": "alice", "version": 2}
+	if err := repo.UpsertDocument(ctx, doc1); err != nil {
+		t.Fatalf("Re-upsert doc1 with metadata failed: %v", err)
+	}
+	var metaCount int
+	repo.GetDB().QueryRowContext(ctx, "SELECT count(*) FROM metadata WHERE document_id = 'doc-101'").Scan(&metaCount)
+	if metaCount != 2 {
+		t.Errorf("Expected 2 metadata rows for doc-101, got %d", metaCount)
+	}
+
+	// 5. RemoveDocument (must also cascade-delete sections, links, tags, metadata, fts)
 	if err := repo.RemoveDocument(ctx, "/vault/DocA.md"); err != nil {
 		t.Fatalf("RemoveDocument failed: %v", err)
 	}
 	deletedDoc, err := repo.GetDocumentByPath(ctx, "/vault/DocA.md")
 	if err != nil || deletedDoc != nil {
 		t.Errorf("Expected nil after removal, got %v", deletedDoc)
+	}
+	for _, query := range []string{
+		"SELECT count(*) FROM sections WHERE document_id = 'doc-101'",
+		"SELECT count(*) FROM links WHERE source_document_id = 'doc-101'",
+		"SELECT count(*) FROM document_tags WHERE document_id = 'doc-101'",
+		"SELECT count(*) FROM metadata WHERE document_id = 'doc-101'",
+		"SELECT count(*) FROM fts_documents WHERE id = 'doc-101'",
+		"SELECT count(*) FROM fts_sections WHERE document_id = 'doc-101'",
+	} {
+		var n int
+		repo.GetDB().QueryRowContext(ctx, query).Scan(&n)
+		if n != 0 {
+			t.Errorf("Expected 0 orphan rows for (%s), got %d", query, n)
+		}
 	}
 }
 
@@ -304,5 +330,63 @@ func TestSQLiteRepository_FTSSections(t *testing.T) {
 	}
 	if countFor("heading:AES AND tags:security AND metadata:infra") != 1 {
 		t.Errorf("Expected backfilled section with tags and metadata")
+	}
+}
+
+// TestSQLiteRepository_ConcurrentWriterAndReader simulates md-indexer writing while md-api reads the same file.
+func TestSQLiteRepository_ConcurrentWriterAndReader(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "shared.db")
+
+	writer, err := NewSQLiteRepository(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to open writer: %v", err)
+	}
+	defer writer.Close()
+	reader, err := NewSQLiteRepository(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to open reader: %v", err)
+	}
+	defer reader.Close()
+
+	var mode string
+	if err := reader.GetDB().QueryRowContext(ctx, "PRAGMA journal_mode").Scan(&mode); err != nil || mode != "wal" {
+		t.Fatalf("expected journal_mode wal, got %q (err %v)", mode, err)
+	}
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 2)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 50; i++ {
+			doc := &entities.Document{
+				ID:         fmt.Sprintf("doc-%d", i),
+				Path:       fmt.Sprintf("/vault/note-%d.md", i),
+				Title:      fmt.Sprintf("Note %d", i),
+				Content:    "concurrent ingestion pipeline note",
+				Hash:       fmt.Sprintf("hash-%d", i),
+				ModifiedAt: time.Now(),
+				IndexedAt:  time.Now(),
+			}
+			if err := writer.UpsertDocument(ctx, doc); err != nil {
+				errs <- fmt.Errorf("write %d: %w", i, err)
+				return
+			}
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 50; i++ {
+			if _, err := reader.Search(ctx, "ingestion"); err != nil {
+				errs <- fmt.Errorf("read %d: %w", i, err)
+				return
+			}
+		}
+	}()
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Error(err)
 	}
 }

@@ -59,6 +59,110 @@ type ollamaGenerateResponse struct {
 
 // Generate sends the prompt to the Ollama HTTP API endpoint and returns the generated text.
 func (p *OllamaProvider) Generate(ctx context.Context, req *model.GenerateRequest) (*model.GenerateResponse, error) {
+	resp, err := p.doRequest(ctx, req, false)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var ollamaResp ollamaGenerateResponse
+	if err := json.NewDecoder(resp.Body).Decode(&ollamaResp); err != nil {
+		return nil, fmt.Errorf("failed to decode ollama response: %w", err)
+	}
+
+	return &model.GenerateResponse{
+		Response:     ollamaResp.Response,
+		Model:        ollamaResp.Model,
+		PromptTokens: ollamaResp.PromptEvalCount,
+		OutputTokens: ollamaResp.EvalCount,
+	}, nil
+}
+
+// GenerateStream sends the prompt with stream=true to Ollama and invokes onToken for each generated token chunk.
+func (p *OllamaProvider) GenerateStream(ctx context.Context, req *model.GenerateRequest, onToken func(token string)) (*model.GenerateResponse, error) {
+	resp, err := p.doRequest(ctx, req, true)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	dec := json.NewDecoder(resp.Body)
+	var full bytes.Buffer
+	var last ollamaGenerateResponse
+	for {
+		var chunk ollamaGenerateResponse
+		if err := dec.Decode(&chunk); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return nil, fmt.Errorf("failed to decode ollama stream chunk: %w", err)
+		}
+		if chunk.Response != "" {
+			full.WriteString(chunk.Response)
+			if onToken != nil {
+				onToken(chunk.Response)
+			}
+		}
+		last = chunk
+		if chunk.Done {
+			break
+		}
+	}
+
+	modelName := last.Model
+	if modelName == "" {
+		modelName = req.Model
+	}
+	return &model.GenerateResponse{
+		Response:     full.String(),
+		Model:        modelName,
+		PromptTokens: last.PromptEvalCount,
+		OutputTokens: last.EvalCount,
+	}, nil
+}
+
+type ollamaTagsResponse struct {
+	Models []struct {
+		Name    string `json:"name"`
+		Size    int64  `json:"size"`
+		Details struct {
+			Family string `json:"family"`
+		} `json:"details"`
+	} `json:"models"`
+}
+
+// ListModels returns the models installed in the Ollama daemon via GET /api/tags.
+func (p *OllamaProvider) ListModels(ctx context.Context) ([]model.ModelInfo, error) {
+	endpoint := fmt.Sprintf("%s/api/tags", p.baseURL)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create http request: %w", err)
+	}
+
+	resp, err := p.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call ollama at %s: %w", endpoint, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("ollama returned status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var tags ollamaTagsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+		return nil, fmt.Errorf("failed to decode ollama tags response: %w", err)
+	}
+
+	models := make([]model.ModelInfo, 0, len(tags.Models))
+	for _, m := range tags.Models {
+		models = append(models, model.ModelInfo{Name: m.Name, Size: m.Size, Family: m.Details.Family})
+	}
+	return models, nil
+}
+
+func (p *OllamaProvider) doRequest(ctx context.Context, req *model.GenerateRequest, stream bool) (*http.Response, error) {
 	endpoint := fmt.Sprintf("%s/api/generate", p.baseURL)
 
 	options := make(map[string]interface{})
@@ -79,7 +183,7 @@ func (p *OllamaProvider) Generate(ctx context.Context, req *model.GenerateReques
 		Model:   req.Model,
 		Prompt:  req.Prompt,
 		System:  req.System,
-		Stream:  false,
+		Stream:  stream,
 		Think:   false,
 		Options: options,
 	}
@@ -99,22 +203,11 @@ func (p *OllamaProvider) Generate(ctx context.Context, req *model.GenerateReques
 	if err != nil {
 		return nil, fmt.Errorf("failed to call ollama at %s: %w", endpoint, err)
 	}
-	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
 		return nil, fmt.Errorf("ollama returned status %d: %s", resp.StatusCode, string(respBody))
 	}
-
-	var ollamaResp ollamaGenerateResponse
-	if err := json.NewDecoder(resp.Body).Decode(&ollamaResp); err != nil {
-		return nil, fmt.Errorf("failed to decode ollama response: %w", err)
-	}
-
-	return &model.GenerateResponse{
-		Response:     ollamaResp.Response,
-		Model:        ollamaResp.Model,
-		PromptTokens: ollamaResp.PromptEvalCount,
-		OutputTokens: ollamaResp.EvalCount,
-	}, nil
+	return resp, nil
 }
