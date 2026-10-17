@@ -18,7 +18,14 @@ type SQLiteRepository struct {
 	db *sql.DB
 }
 
+// filePragmas lets md-indexer (writer) and md-api/md-search (readers) share one database file concurrently.
+const filePragmas = "_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"
+
 func NewSQLiteRepository(dsn string) (*SQLiteRepository, error) {
+	// Only plain file paths get the pragmas; in-memory and explicitly parameterized DSNs are used as given.
+	if dsn != ":memory:" && !strings.HasPrefix(dsn, "file:") && !strings.Contains(dsn, "?") {
+		dsn += "?" + filePragmas
+	}
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err

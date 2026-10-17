@@ -31,6 +31,7 @@ func main() {
 
 	dbPath := flag.String("db", "index.db", "Path to SQLite database")
 	port := flag.String("port", "8081", "HTTP server port")
+	host := flag.String("host", "", "HTTP bind address, e.g. 127.0.0.1 (empty listens on all interfaces)")
 	aiEnabled := flag.Bool("ai", false, "Enable AI assistant endpoint (/api/ai/ask)")
 	aiConfigFile := flag.String("ai-config", "", "Optional path to md-ai YAML configuration file")
 	ollamaHost := flag.String("ollama-host", aiCfg.OllamaHost, "Ollama API host URL")
@@ -75,12 +76,12 @@ func main() {
 		cb := contextbuilder.NewContextBuilder(aiCfg.MaxContextTokens)
 		prov := provider.NewOllamaProvider(aiCfg.OllamaHost, &http.Client{Timeout: aiCfg.Timeout()})
 		asst := assistant.NewAssistant(aiCfg, clf, ret, cb, prov)
-		server.WithAssistant(asst)
+		server.WithAssistant(asst).WithModelLister(prov, rest.ActiveModels{Model: aiCfg.Model, EmbeddingModel: aiCfg.EmbeddingModel})
 		log.Info().Str("model", aiCfg.Model).Str("retriever", aiCfg.Retriever).Msg("AI Assistant endpoint /api/ai/ask enabled")
 	}
 
 	httpServer := &http.Server{
-		Addr:    ":" + *port,
+		Addr:    *host + ":" + *port,
 		Handler: server.Handler(),
 	}
 

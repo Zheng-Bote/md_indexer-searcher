@@ -121,6 +121,47 @@ func (p *OllamaProvider) GenerateStream(ctx context.Context, req *model.Generate
 	}, nil
 }
 
+type ollamaTagsResponse struct {
+	Models []struct {
+		Name    string `json:"name"`
+		Size    int64  `json:"size"`
+		Details struct {
+			Family string `json:"family"`
+		} `json:"details"`
+	} `json:"models"`
+}
+
+// ListModels returns the models installed in the Ollama daemon via GET /api/tags.
+func (p *OllamaProvider) ListModels(ctx context.Context) ([]model.ModelInfo, error) {
+	endpoint := fmt.Sprintf("%s/api/tags", p.baseURL)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create http request: %w", err)
+	}
+
+	resp, err := p.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call ollama at %s: %w", endpoint, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("ollama returned status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var tags ollamaTagsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
+		return nil, fmt.Errorf("failed to decode ollama tags response: %w", err)
+	}
+
+	models := make([]model.ModelInfo, 0, len(tags.Models))
+	for _, m := range tags.Models {
+		models = append(models, model.ModelInfo{Name: m.Name, Size: m.Size, Family: m.Details.Family})
+	}
+	return models, nil
+}
+
 func (p *OllamaProvider) doRequest(ctx context.Context, req *model.GenerateRequest, stream bool) (*http.Response, error) {
 	endpoint := fmt.Sprintf("%s/api/generate", p.baseURL)
 

@@ -9,12 +9,21 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/md-indexer/internal/ai/assistant"
+	"github.com/md-indexer/internal/ai/provider"
 	"github.com/md-indexer/internal/search"
 )
 
 type Server struct {
 	searchEngine search.SearchEngine
 	assistant    *assistant.Assistant
+	modelLister  provider.ModelLister
+	activeModels ActiveModels
+}
+
+// ActiveModels names the generation and embedding models the server is configured with.
+type ActiveModels struct {
+	Model          string `json:"model"`
+	EmbeddingModel string `json:"embedding_model"`
 }
 
 func NewServer(se search.SearchEngine) *Server {
@@ -24,6 +33,13 @@ func NewServer(se search.SearchEngine) *Server {
 // WithAssistant attaches an AI assistant orchestrator to the REST server.
 func (s *Server) WithAssistant(a *assistant.Assistant) *Server {
 	s.assistant = a
+	return s
+}
+
+// WithModelLister enables /api/ai/models using the given backend and reports the active models.
+func (s *Server) WithModelLister(l provider.ModelLister, active ActiveModels) *Server {
+	s.modelLister = l
+	s.activeModels = active
 	return s
 }
 
@@ -99,6 +115,21 @@ func (s *Server) Handler() http.Handler {
 		}
 		ans, err := s.assistant.Ask(r.Context(), req.Question, nil)
 		respondJSON(w, ans, err)
+	})
+
+	r.Get("/api/ai/models", func(w http.ResponseWriter, r *http.Request) {
+		if s.modelLister == nil {
+			http.Error(w, `{"success":false,"error":"AI assistant not configured"}`, http.StatusNotImplemented)
+			return
+		}
+		models, err := s.modelLister.ListModels(r.Context())
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadGateway)
+			json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
+			return
+		}
+		respondJSON(w, map[string]interface{}{"models": models, "active": s.activeModels}, nil)
 	})
 
 	return r

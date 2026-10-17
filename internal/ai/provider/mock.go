@@ -14,6 +14,7 @@ import (
 type MockProvider struct {
 	ResponseFunc func(ctx context.Context, req *model.GenerateRequest) (*model.GenerateResponse, error)
 	Calls        []*model.GenerateRequest
+	Models       []model.ModelInfo
 }
 
 // NewMockProvider creates a new MockProvider with a static response string.
@@ -55,4 +56,9 @@ func (m *MockProvider) GenerateStream(ctx context.Context, req *model.GenerateRe
 		onToken(resp.Response)
 	}
 	return resp, nil
+}
+
+// ListModels returns the configured Models.
+func (m *MockProvider) ListModels(ctx context.Context) ([]model.ModelInfo, error) {
+	return m.Models, nil
 }

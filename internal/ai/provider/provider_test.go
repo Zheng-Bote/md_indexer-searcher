@@ -165,3 +165,42 @@ func TestOllamaProvider_GenerateStream(t *testing.T) {
 		t.Errorf("unexpected token counts: %+v", res)
 	}
 }
+
+func TestOllamaProvider_ListModels(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/tags" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		w.Write([]byte(`{"models":[{"name":"qwen3:14b","size":9300000000,"details":{"family":"qwen3"}},{"name":"bge-m3:latest","size":1200000000,"details":{"family":"bert"}}]}`))
+	}))
+	defer srv.Close()
+
+	p := NewOllamaProvider(srv.URL, nil)
+	models, err := p.ListModels(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []model.ModelInfo{
+		{Name: "qwen3:14b", Size: 9300000000, Family: "qwen3"},
+		{Name: "bge-m3:latest", Size: 1200000000, Family: "bert"},
+	}
+	if len(models) != len(want) {
+		t.Fatalf("expected %d models, got %d", len(want), len(models))
+	}
+	for i := range want {
+		if models[i] != want[i] {
+			t.Errorf("model %d: expected %+v, got %+v", i, want[i], models[i])
+		}
+	}
+}
+
+func TestOllamaProvider_ListModelsUnreachable(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	url := srv.URL
+	srv.Close()
+
+	p := NewOllamaProvider(url, &http.Client{Timeout: time.Second})
+	if _, err := p.ListModels(context.Background()); err == nil {
+		t.Fatal("expected error for unreachable ollama host")
+	}
+}

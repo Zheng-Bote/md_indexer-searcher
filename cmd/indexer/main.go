@@ -27,6 +27,7 @@ func main() {
 	dir := flag.String("dir", ".", "Directory to index")
 	dbPath := flag.String("db", "index.db", "Path to SQLite database")
 	port := flag.String("port", "8080", "HTTP server port")
+	host := flag.String("host", "", "HTTP bind address, e.g. 127.0.0.1 (empty listens on all interfaces)")
 	embedModel := flag.String("embed-model", "", "Ollama embedding model for vector retrieval, e.g. bge-m3 (empty disables embeddings)")
 	ollamaHost := flag.String("ollama-host", "http://localhost:11434", "Ollama API host URL for embeddings")
 	force := flag.Bool("force", false, "Force re-parsing all Markdown files and purge skipped/deleted entries without dropping unchanged embeddings")
@@ -65,7 +66,7 @@ func main() {
 
 	server := api.NewServer(cfg, repo)
 	httpServer := &http.Server{
-		Addr:    ":" + cfg.Port,
+		Addr:    *host + ":" + cfg.Port,
 		Handler: server.Handler(),
 	}
 

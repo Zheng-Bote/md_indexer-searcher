@@ -22,3 +22,8 @@ type StreamingLLMProvider interface {
 	LLMProvider
 	GenerateStream(ctx context.Context, req *model.GenerateRequest, onToken func(token string)) (*model.GenerateResponse, error)
 }
+
+// ModelLister is an optional interface for LLM backends that can enumerate their installed models.
+type ModelLister interface {
+	ListModels(ctx context.Context) ([]model.ModelInfo, error)
+}

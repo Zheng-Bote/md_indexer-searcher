@@ -4,7 +4,9 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -328,5 +330,63 @@ func TestSQLiteRepository_FTSSections(t *testing.T) {
 	}
 	if countFor("heading:AES AND tags:security AND metadata:infra") != 1 {
 		t.Errorf("Expected backfilled section with tags and metadata")
+	}
+}
+
+// TestSQLiteRepository_ConcurrentWriterAndReader simulates md-indexer writing while md-api reads the same file.
+func TestSQLiteRepository_ConcurrentWriterAndReader(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "shared.db")
+
+	writer, err := NewSQLiteRepository(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to open writer: %v", err)
+	}
+	defer writer.Close()
+	reader, err := NewSQLiteRepository(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to open reader: %v", err)
+	}
+	defer reader.Close()
+
+	var mode string
+	if err := reader.GetDB().QueryRowContext(ctx, "PRAGMA journal_mode").Scan(&mode); err != nil || mode != "wal" {
+		t.Fatalf("expected journal_mode wal, got %q (err %v)", mode, err)
+	}
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 2)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 50; i++ {
+			doc := &entities.Document{
+				ID:         fmt.Sprintf("doc-%d", i),
+				Path:       fmt.Sprintf("/vault/note-%d.md", i),
+				Title:      fmt.Sprintf("Note %d", i),
+				Content:    "concurrent ingestion pipeline note",
+				Hash:       fmt.Sprintf("hash-%d", i),
+				ModifiedAt: time.Now(),
+				IndexedAt:  time.Now(),
+			}
+			if err := writer.UpsertDocument(ctx, doc); err != nil {
+				errs <- fmt.Errorf("write %d: %w", i, err)
+				return
+			}
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 50; i++ {
+			if _, err := reader.Search(ctx, "ingestion"); err != nil {
+				errs <- fmt.Errorf("read %d: %w", i, err)
+				return
+			}
+		}
+	}()
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Error(err)
 	}
 }

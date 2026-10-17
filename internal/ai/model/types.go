@@ -126,6 +126,13 @@ type GenerateResponse struct {
 	OutputTokens int    `json:"output_tokens,omitempty"`
 }
 
+// ModelInfo describes a model installed in the LLM backend.
+type ModelInfo struct {
+	Name   string `json:"name"`
+	Size   int64  `json:"size"`
+	Family string `json:"family,omitempty"`
+}
+
 // SourceCitation represents a cited document or section in the answer.
 type SourceCitation struct {
 	Path    string `json:"path"`
