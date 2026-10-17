@@ -47,6 +47,19 @@ const (
 // Longer names rank first because they are more specific.
 const entityMatchQuery = `
 	SELECT e.id, e.name, COALESCE(t.name, e.type_id, ''),
+		COALESCE((SELECT d.id FROM documents d WHERE d.id = e.document_id OR d.title = e.id LIMIT 1), ''),
+		COALESCE((SELECT d.path FROM documents d WHERE d.id = e.document_id OR d.title = e.id LIMIT 1), ''),
+		COALESCE((SELECT p.property_value FROM entity_properties p WHERE p.entity_id = e.id AND p.property_key = 'description' LIMIT 1), ''),
+		COALESCE((SELECT p.property_value FROM entity_properties p WHERE p.entity_id = e.id AND p.property_key = 'api' LIMIT 1), '')
+	FROM entities e
+	LEFT JOIN entity_types t ON t.id = e.type_id
+	WHERE e.type_id != 'unresolved' AND length(e.name) >= 3 AND ? LIKE '%' || e.name || '%'
+	ORDER BY length(e.name) DESC, e.name
+	LIMIT ?;
+`
+
+const entityMatchQueryLegacy = `
+	SELECT e.id, e.name, COALESCE(t.name, e.type_id, ''),
 		COALESCE((SELECT d.id FROM documents d WHERE d.title = e.id LIMIT 1), ''),
 		COALESCE((SELECT d.path FROM documents d WHERE d.title = e.id LIMIT 1), ''),
 		COALESCE((SELECT p.property_value FROM entity_properties p WHERE p.entity_id = e.id AND p.property_key = 'description' LIMIT 1), ''),
@@ -70,6 +83,9 @@ const entityScore = 1.0
 // Find returns the entities named in the query, their relations and the sections of their defining documents.
 func (s *SQLiteEntities) Find(ctx context.Context, query string) (*EntityResult, error) {
 	rows, err := s.db.QueryContext(ctx, entityMatchQuery, query, maxEntities)
+	if err != nil && strings.Contains(err.Error(), "no such column") {
+		rows, err = s.db.QueryContext(ctx, entityMatchQueryLegacy, query, maxEntities)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("entity match: %w", err)
 	}

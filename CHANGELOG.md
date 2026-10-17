@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added Jaccard near-duplicate section filtering ($\ge 0.80$), score-preserving priority sorting, conservative `~3 bytes/token` estimation, and automatic secret redaction (`*_API_KEY`, `*_SECRET`, `*_TOKEN`, `sk-...`, Bearer tokens).
 - **Configuration & Documentation:**
   - Added YAML configuration loading (`~/.config/md-indexer/ai.yaml`, `./md-ai.yaml`, `--config` / `MD_AI_CONFIG`), full `MD_AI_*` environment variable support in `md-api`, `md-ai.example.yaml`, and `docs/Hybrid_GraphRAG_DE.md`.
+- **Indexer Data Quality & Retrieval Performance:**
+  - Added explicit `entities.document_id` column (with automatic migration backfill and fallback to `documents.title`), German stem/prefix matching in FTS5 (`stemTerm`), and an automatically invalidated in-memory vector cache in `SQLiteVectors`.
+  - Normalized Obsidian wikilink targets (`[[Note|Alias]]`, `[[Note#Heading]]`) in inline links and frontmatter relations, excluded code blocks and inline code spans from link/tag extraction, skipped `_templates_` and hidden folders during indexing/watching, populated the `metadata` table, and added full cascade cleanup in `RemoveDocument`.
 
 ### Changed
 - **Ollama & Model Defaults (`#12`, `#13`, `#16`):**

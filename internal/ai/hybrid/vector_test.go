@@ -94,3 +94,32 @@ func TestRetriever_VectorFindsWhatFTSMisses(t *testing.T) {
 		t.Errorf("expected encryption overview via vector, got %+v", res.Snippets)
 	}
 }
+
+func TestSQLiteVectors_InMemoryCacheInvalidation(t *testing.T) {
+	db := setupDB(t)
+	storeEmbedding(t, db, "enc-overview", []float32{1, 0, 0})
+
+	emb := &keywordEmbedder{query: []float32{1, 0, 0}}
+	v := NewSQLiteVectors(db, emb, 0.5)
+
+	cands1, err := v.Search(context.Background(), "Verschlüsselung", 10)
+	if err != nil || len(cands1) != 1 {
+		t.Fatalf("expected 1 candidate on first search, got %v (err=%v)", cands1, err)
+	}
+	if len(v.cacheVecs) != 1 {
+		t.Fatalf("expected 1 cached entry, got %d", len(v.cacheVecs))
+	}
+
+	// Second search with unchanged table reuses the cached slice.
+	cands2, err := v.Search(context.Background(), "Verschlüsselung", 10)
+	if err != nil || len(cands2) != 1 {
+		t.Fatalf("expected 1 candidate on cached search, got %v (err=%v)", cands2, err)
+	}
+
+	// Inserting a new embedding changes count(*) and invalidates the cache.
+	storeEmbedding(t, db, "enc-api", []float32{0.9, 0.1, 0})
+	cands3, err := v.Search(context.Background(), "Verschlüsselung", 10)
+	if err != nil || len(cands3) != 2 {
+		t.Fatalf("expected 2 candidates after cache invalidation, got %v (err=%v)", cands3, err)
+	}
+}

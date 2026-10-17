@@ -36,6 +36,14 @@ func TestFTSMatch_QuotesTerms(t *testing.T) {
 	}
 }
 
+func TestFTSMatch_PrefixAndStemming(t *testing.T) {
+	got := ftsMatch([]string{"konfiguriere", "verschlüsselung", "aes"})
+	want := `"konfigur"* OR "verschlüssel"* OR "aes"`
+	if got != want {
+		t.Errorf("ftsMatch() = %q, want %q", got, want)
+	}
+}
+
 func TestPlanner_Plan(t *testing.T) {
 	p := NewPlanner(3)
 	tests := []struct {

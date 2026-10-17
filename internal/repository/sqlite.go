@@ -47,7 +47,7 @@ func migrate(db *sql.DB) error {
 	CREATE TABLE IF NOT EXISTS metadata (document_id TEXT, key TEXT, value TEXT, FOREIGN KEY(document_id) REFERENCES documents(id));
 	
 	CREATE TABLE IF NOT EXISTS entity_types (id TEXT PRIMARY KEY, name TEXT UNIQUE);
-	CREATE TABLE IF NOT EXISTS entities (id TEXT PRIMARY KEY, type_id TEXT, name TEXT, FOREIGN KEY(type_id) REFERENCES entity_types(id));
+	CREATE TABLE IF NOT EXISTS entities (id TEXT PRIMARY KEY, type_id TEXT, name TEXT, document_id TEXT, FOREIGN KEY(type_id) REFERENCES entity_types(id));
 	CREATE TABLE IF NOT EXISTS entity_properties (entity_id TEXT, property_key TEXT, property_value TEXT, FOREIGN KEY(entity_id) REFERENCES entities(id));
 	CREATE TABLE IF NOT EXISTS entity_relations (source_entity_id TEXT, target_entity_id TEXT, relation_type TEXT, FOREIGN KEY(source_entity_id) REFERENCES entities(id), FOREIGN KEY(target_entity_id) REFERENCES entities(id));
 
@@ -68,8 +68,13 @@ func migrate(db *sql.DB) error {
 	JOIN documents d ON d.id = s.document_id
 	WHERE s.content != '' AND NOT EXISTS (SELECT 1 FROM fts_sections);`
 
-	_, err := db.Exec(query)
-	return err
+	if _, err := db.Exec(query); err != nil {
+		return err
+	}
+	// Ensure existing databases built before entities.document_id was added get the column and backfill.
+	_, _ = db.Exec("ALTER TABLE entities ADD COLUMN document_id TEXT")
+	_, _ = db.Exec("UPDATE entities SET document_id = (SELECT d.id FROM documents d WHERE d.title = entities.id LIMIT 1) WHERE (document_id IS NULL OR document_id = '') AND type_id != 'unresolved'")
+	return nil
 }
 
 func (r *SQLiteRepository) UpsertDocument(ctx context.Context, doc *entities.Document) error {
@@ -144,7 +149,7 @@ func (r *SQLiteRepository) UpsertDocument(ctx context.Context, doc *entities.Doc
 	if doc.IsEntity {
 		tx.ExecContext(ctx, "INSERT OR IGNORE INTO entity_types (id, name) VALUES ('unresolved', 'unresolved')")
 		tx.ExecContext(ctx, "INSERT OR IGNORE INTO entity_types (id, name) VALUES (?, ?)", doc.EntityType, doc.EntityType)
-		tx.ExecContext(ctx, "INSERT INTO entities (id, type_id, name) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET type_id = excluded.type_id, name = excluded.name", entID, doc.EntityType, doc.EntityName)
+		tx.ExecContext(ctx, "INSERT INTO entities (id, type_id, name, document_id) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET type_id = excluded.type_id, name = excluded.name, document_id = excluded.document_id", entID, doc.EntityType, doc.EntityName, doc.ID)
 
 		for k, v := range doc.EntityProperties {
 			tx.ExecContext(ctx, "INSERT INTO entity_properties (entity_id, property_key, property_value) VALUES (?, ?, ?)", entID, k, v)
@@ -162,12 +167,12 @@ func (r *SQLiteRepository) UpsertDocument(ctx context.Context, doc *entities.Doc
 			seenRel[relKey] = true
 
 			// Ensure target entity stub exists to satisfy relational integrity
-			tx.ExecContext(ctx, "INSERT OR IGNORE INTO entities (id, type_id, name) VALUES (?, 'unresolved', ?)", rel.TargetID, rel.TargetID)
+			tx.ExecContext(ctx, "INSERT OR IGNORE INTO entities (id, type_id, name, document_id) VALUES (?, 'unresolved', ?, '')", rel.TargetID, rel.TargetID)
 
 			tx.ExecContext(ctx, "INSERT INTO entity_relations (source_entity_id, target_entity_id, relation_type) VALUES (?, ?, ?)", rel.SourceID, rel.TargetID, rel.Type)
 		}
 	} else {
-		tx.ExecContext(ctx, "DELETE FROM entities WHERE id = ?", entID)
+		tx.ExecContext(ctx, "DELETE FROM entities WHERE id = ? OR document_id = ?", entID, doc.ID)
 	}
 
 	return tx.Commit()

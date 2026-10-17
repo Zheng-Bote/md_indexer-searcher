@@ -243,11 +243,21 @@ func (g *SQLiteGraph) neighbours(ctx context.Context, ids []string) ([]edge, err
 
 	// TAGS are handled as shared-tag edges below; ATTACHMENTS point to files, not notes.
 	relRows, err := g.db.QueryContext(ctx, fmt.Sprintf(`
-		SELECT ds.id, dt.id, r.relation_type
+		SELECT DISTINCT ds.id, dt.id, r.relation_type
 		FROM entity_relations r
-		JOIN documents ds ON ds.title = r.source_entity_id
-		JOIN documents dt ON dt.title = r.target_entity_id
+		LEFT JOIN entities es ON es.id = r.source_entity_id
+		LEFT JOIN entities et ON et.id = r.target_entity_id
+		JOIN documents ds ON ds.id = es.document_id OR ds.title = r.source_entity_id
+		JOIN documents dt ON dt.id = et.document_id OR dt.title = r.target_entity_id
 		WHERE r.relation_type NOT IN ('TAGS', 'ATTACHMENTS') AND (ds.id IN (%[1]s) OR dt.id IN (%[1]s))`, ph), idArgs(ids, 2)...)
+	if err != nil && strings.Contains(err.Error(), "no such column") {
+		relRows, err = g.db.QueryContext(ctx, fmt.Sprintf(`
+			SELECT ds.id, dt.id, r.relation_type
+			FROM entity_relations r
+			JOIN documents ds ON ds.title = r.source_entity_id
+			JOIN documents dt ON dt.title = r.target_entity_id
+			WHERE r.relation_type NOT IN ('TAGS', 'ATTACHMENTS') AND (ds.id IN (%[1]s) OR dt.id IN (%[1]s))`, ph), idArgs(ids, 2)...)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("graph relations: %w", err)
 	}
