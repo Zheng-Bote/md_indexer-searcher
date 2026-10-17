@@ -1,0 +1,39 @@
+# SPDX-FileCopyrightText: 2026 Zheng-Bote
+# SPDX-License-Identifier: Apache-2.0
+#
+# Example configuration for md-ai and md-api (-ai).
+# Copy to ~/.config/md-indexer/ai.yaml or ./md-ai.yaml, or pass via --config / MD_AI_CONFIG.
+
+# Path to the SQLite index built by md-indexer (opened strictly read-only by md-ai)
+db_path: "knowledge.db"
+
+# Local Ollama endpoint and generation model
+ollama_host: "http://localhost:11434"
+model: "qwen3:14b"
+temperature: 0.2
+max_tokens: 2048
+
+# Context token budget (~3 bytes/token). 4000 keeps CPU prefill fast (~2-3 min);
+# increase to 8000-16000 when running on GPU.
+max_context_tokens: 4000
+timeout_seconds: 600
+json_output: false
+
+# Retrieval engine: "hybrid" (planned multi-source GraphRAG) or "classic"
+retriever: "hybrid"
+top_k_fts: 25
+graph_depth: 3
+
+# Local vector embeddings via Ollama (must match md-indexer -embed-model)
+# Supported models: bge-m3, nomic-embed-text, jina-embeddings-v3
+enable_vectors: true
+embedding_model: "bge-m3"
+top_k_vector: 25
+min_vector_score: 0.55
+
+# Reciprocal Rank Fusion (RRF) base weights
+# Note: For impact and architecture queries, graph weight is automatically boosted.
+fusion_fts_weight: 0.35
+fusion_vector_weight: 0.35
+fusion_graph_weight: 0.20
+fusion_entity_weight: 0.10

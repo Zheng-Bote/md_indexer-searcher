@@ -6,8 +6,11 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
+
+	"gopkg.in/yaml.v2"
 )
 
 // Config encapsulates configuration parameters for md-ai.
@@ -51,7 +54,7 @@ func DefaultConfig() *Config {
 		Model:            "qwen3:14b",
 		Temperature:      0.2,
 		MaxTokens:        2048,
-		MaxContextTokens: 16000,
+		MaxContextTokens: 4000,
 		GraphDepth:       3,
 		TimeoutSeconds:   600,
 		JSONOutput:       false,
@@ -68,6 +71,39 @@ func DefaultConfig() *Config {
 		MinVectorScore:     0.55,
 		FusionVectorWeight: 0.35,
 	}
+}
+
+// LoadFromFile reads YAML configuration from path and merges non-empty values into c.
+func (c *Config) LoadFromFile(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	return yaml.Unmarshal(data, c)
+}
+
+// LoadDefaultFiles loads ~/.config/md-indexer/ai.yaml and ./md-ai.yaml if they exist,
+// and then applies MD_AI_CONFIG if set.
+func (c *Config) LoadDefaultFiles() error {
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		userCfg := filepath.Join(home, ".config", "md-indexer", "ai.yaml")
+		if _, err := os.Stat(userCfg); err == nil {
+			if err := c.LoadFromFile(userCfg); err != nil {
+				return fmt.Errorf("failed to load %s: %w", userCfg, err)
+			}
+		}
+	}
+	if _, err := os.Stat("md-ai.yaml"); err == nil {
+		if err := c.LoadFromFile("md-ai.yaml"); err != nil {
+			return fmt.Errorf("failed to load md-ai.yaml: %w", err)
+		}
+	}
+	if envPath := os.Getenv("MD_AI_CONFIG"); envPath != "" {
+		if err := c.LoadFromFile(envPath); err != nil {
+			return fmt.Errorf("failed to load %s: %w", envPath, err)
+		}
+	}
+	return nil
 }
 
 // LoadFromEnv overrides configuration values with environment variables if present.
@@ -109,11 +145,46 @@ func (c *Config) LoadFromEnv() {
 	if val := os.Getenv("MD_AI_RETRIEVER"); val != "" {
 		c.Retriever = val
 	}
+	if val := os.Getenv("MD_AI_TOP_K_FTS"); val != "" {
+		if i, err := strconv.Atoi(val); err == nil {
+			c.TopKFTS = i
+		}
+	}
 	if val := os.Getenv("MD_AI_ENABLE_VECTORS"); val != "" {
 		c.EnableVectors = val == "true" || val == "1"
 	}
 	if val := os.Getenv("MD_AI_EMBEDDING_MODEL"); val != "" {
 		c.EmbeddingModel = val
+	}
+	if val := os.Getenv("MD_AI_TOP_K_VECTOR"); val != "" {
+		if i, err := strconv.Atoi(val); err == nil {
+			c.TopKVector = i
+		}
+	}
+	if val := os.Getenv("MD_AI_MIN_VECTOR_SCORE"); val != "" {
+		if f, err := strconv.ParseFloat(val, 64); err == nil {
+			c.MinVectorScore = f
+		}
+	}
+	if val := os.Getenv("MD_AI_FUSION_FTS_WEIGHT"); val != "" {
+		if f, err := strconv.ParseFloat(val, 64); err == nil {
+			c.FusionFTSWeight = f
+		}
+	}
+	if val := os.Getenv("MD_AI_FUSION_VECTOR_WEIGHT"); val != "" {
+		if f, err := strconv.ParseFloat(val, 64); err == nil {
+			c.FusionVectorWeight = f
+		}
+	}
+	if val := os.Getenv("MD_AI_FUSION_GRAPH_WEIGHT"); val != "" {
+		if f, err := strconv.ParseFloat(val, 64); err == nil {
+			c.FusionGraphWeight = f
+		}
+	}
+	if val := os.Getenv("MD_AI_FUSION_ENTITY_WEIGHT"); val != "" {
+		if f, err := strconv.ParseFloat(val, 64); err == nil {
+			c.FusionEntityWeight = f
+		}
 	}
 	if val := os.Getenv("MD_AI_JSON"); val != "" {
 		c.JSONOutput = val == "true" || val == "1"

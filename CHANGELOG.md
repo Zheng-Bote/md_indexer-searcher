@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Hybrid GraphRAG Retriever (`internal/ai/hybrid`, `#14`, `#15`, `#17`):**
+  - Added query-type planner (`fact`, `entity`, `impact`, `architecture`, `exploration`) and German intent classification patterns.
+  - Added section-level FTS5 virtual table (`fts_sections`) with automatic migration backfill, stopword filtering (DE/EN), and column weights (`title: 1.0`, `heading: 0.8`, `tags: 0.7`, `content: 0.5`, `metadata: 0.4`).
+  - Added local Ollama vector embeddings (`internal/embedding`, `section_embeddings` table, incremental embedding in `md-indexer -embed-model`, brute-force cosine similarity in `VectorRetriever` with default `bge-m3`).
+  - Added weighted BFS graph expansion over `entity_relations` (bidirectional), wikilinks, and shared tags (`2–10` notes) with explicit multi-hop `ReasoningChain`s.
+  - Added plan-aware Reciprocal Rank Fusion (`Weights.ForPlan`) boosting graph contributions on `impact` and `architecture` plans.
+  - Added `ArchitectureContext` synthesis for architecture questions, retrieval-time structured `KnowledgeGap{Entity, Reason}` detection, deterministic source attribution from budgeted context blocks, and exposed `Answer.Plan` debug info.
+- **Context Compression & Safety (`internal/ai/contextbuilder`):**
+  - Added Jaccard near-duplicate section filtering ($\ge 0.80$), score-preserving priority sorting, conservative `~3 bytes/token` estimation, and automatic secret redaction (`*_API_KEY`, `*_SECRET`, `*_TOKEN`, `sk-...`, Bearer tokens).
+- **Configuration & Documentation:**
+  - Added YAML configuration loading (`~/.config/md-indexer/ai.yaml`, `./md-ai.yaml`, `--config` / `MD_AI_CONFIG`), full `MD_AI_*` environment variable support in `md-api`, `md-ai.example.yaml`, and `docs/Hybrid_GraphRAG_DE.md`.
+
+### Changed
+- **Ollama & Model Defaults (`#12`, `#13`, `#16`):**
+  - Aligned classic and hybrid retrievers with the real indexer SQLite schema (`entity_properties`, `documents.title` link resolution).
+  - Changed default LLM model to `qwen3:14b`, lowered default `max_context_tokens` to `4000` for responsive local CPU inference, configured dynamic `num_ctx` window sizing, disabled `think` mode for non-thinking calls, and required answering in the language of the user's question.
+
 ## [v0.2.0] - 2026-10-11
 
 ### Added

@@ -14,11 +14,36 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Model != "qwen3:14b" {
 		t.Fatalf("expected default model qwen3:14b, got %s", cfg.Model)
 	}
+	if cfg.MaxContextTokens != 4000 {
+		t.Fatalf("expected default max_context_tokens 4000, got %d", cfg.MaxContextTokens)
+	}
 	if cfg.Retriever != RetrieverHybrid {
 		t.Fatalf("expected default retriever hybrid, got %s", cfg.Retriever)
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("default config should be valid, got: %v", err)
+	}
+}
+
+func TestConfig_LoadFromFile(t *testing.T) {
+	tmp := t.TempDir() + "/ai.yaml"
+	yamlContent := `model: "gemma3:12b"
+max_context_tokens: 8000
+enable_vectors: true
+embedding_model: "bge-m3"
+top_k_fts: 15
+fusion_graph_weight: 0.40
+`
+	if err := os.WriteFile(tmp, []byte(yamlContent), 0600); err != nil {
+		t.Fatalf("write temp yaml: %v", err)
+	}
+
+	cfg := DefaultConfig()
+	if err := cfg.LoadFromFile(tmp); err != nil {
+		t.Fatalf("LoadFromFile failed: %v", err)
+	}
+	if cfg.Model != "gemma3:12b" || cfg.MaxContextTokens != 8000 || cfg.TopKFTS != 15 || cfg.FusionGraphWeight != 0.40 {
+		t.Errorf("unexpected loaded config: %+v", cfg)
 	}
 }
 
@@ -30,6 +55,8 @@ func TestConfig_LoadFromEnv(t *testing.T) {
 	os.Setenv("MD_AI_TIMEOUT", "900")
 	os.Setenv("MD_AI_ENABLE_VECTORS", "false")
 	os.Setenv("MD_AI_EMBEDDING_MODEL", "nomic-embed-text")
+	os.Setenv("MD_AI_TOP_K_FTS", "20")
+	os.Setenv("MD_AI_FUSION_GRAPH_WEIGHT", "0.45")
 	defer func() {
 		os.Unsetenv("MD_AI_MODEL")
 		os.Unsetenv("MD_AI_TEMPERATURE")
@@ -38,6 +65,8 @@ func TestConfig_LoadFromEnv(t *testing.T) {
 		os.Unsetenv("MD_AI_TIMEOUT")
 		os.Unsetenv("MD_AI_ENABLE_VECTORS")
 		os.Unsetenv("MD_AI_EMBEDDING_MODEL")
+		os.Unsetenv("MD_AI_TOP_K_FTS")
+		os.Unsetenv("MD_AI_FUSION_GRAPH_WEIGHT")
 	}()
 
 	cfg := DefaultConfig()
@@ -60,6 +89,9 @@ func TestConfig_LoadFromEnv(t *testing.T) {
 	}
 	if cfg.EnableVectors || cfg.EmbeddingModel != "nomic-embed-text" {
 		t.Errorf("expected vectors disabled with nomic-embed-text, got %v/%s", cfg.EnableVectors, cfg.EmbeddingModel)
+	}
+	if cfg.TopKFTS != 20 || cfg.FusionGraphWeight != 0.45 {
+		t.Errorf("expected TopKFTS=20 and FusionGraphWeight=0.45, got %d/%f", cfg.TopKFTS, cfg.FusionGraphWeight)
 	}
 }
 

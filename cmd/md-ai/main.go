@@ -26,6 +26,7 @@ import (
 )
 
 var (
+	cfgFile string
 	cfg     = config.DefaultConfig()
 	rootCmd = &cobra.Command{
 		Use:   "md-ai",
@@ -36,8 +37,10 @@ that queries Markdown notes indexed in SQLite knowledge.db using local LLMs (Oll
 )
 
 func init() {
+	_ = cfg.LoadDefaultFiles()
 	cfg.LoadFromEnv()
 
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "Path to YAML configuration file (defaults to ~/.config/md-indexer/ai.yaml and ./md-ai.yaml)")
 	rootCmd.PersistentFlags().StringVar(&cfg.DBPath, "db", cfg.DBPath, "Path to SQLite knowledge database")
 	rootCmd.PersistentFlags().StringVar(&cfg.OllamaHost, "ollama-host", cfg.OllamaHost, "Ollama API host URL")
 	rootCmd.PersistentFlags().StringVarP(&cfg.Model, "model", "m", cfg.Model, "LLM model name")
@@ -57,6 +60,11 @@ func init() {
 }
 
 func initAssistant() (*assistant.Assistant, *sql.DB, error) {
+	if cfgFile != "" {
+		if err := cfg.LoadFromFile(cfgFile); err != nil {
+			return nil, nil, fmt.Errorf("failed to load config %s: %w", cfgFile, err)
+		}
+	}
 	if err := cfg.Validate(); err != nil {
 		return nil, nil, fmt.Errorf("invalid configuration: %w", err)
 	}

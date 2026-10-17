@@ -18,6 +18,7 @@ The system is based on the principles of **Clean Architecture**:
 ```mermaid
 erDiagram
     documents ||--o{ sections : "contains"
+    sections ||--o| section_embeddings : "embedded as"
     documents ||--o{ links : "source"
     documents ||--o{ document_tags : "has"
     tags ||--o{ document_tags : "has"
@@ -42,6 +43,14 @@ erDiagram
         string heading
         int level
         text content
+    }
+    section_embeddings {
+        string section_id PK
+        blob embedding
+        int dimensions
+        string model
+        string content_hash
+        datetime created_at
     }
     links {
         string source_document_id FK
@@ -88,20 +97,27 @@ graph TD
     FS[File System\nMarkdown Files] --> Watcher
     Watcher --> IndexerService[Indexer Service]
     IndexerService --> Parser[Markdown Parser & Extractor]
+    IndexerService --> Embedder[Incremental Embedder\ninternal/embedding]
     IndexerService --> Repo[SQLite Repository]
-    Repo --> DB[(knowledge.db\nSQLite + FTS5)]
+    Embedder <--> OllamaEmbed[Local Ollama Embeddings\ne.g. bge-m3]
+    Embedder --> Repo
+    Repo --> DB[(knowledge.db\nSQLite + FTS5 + Embeddings)]
     
     DB --> SearchEngine[Search / Graph Engine]
     SearchEngine --> API[md-api\nREST Server]
     SearchEngine --> CLI[md-search\nCLI Tool]
     
-    DB --> AIAssistant[md-ai\nGrounded AI / RAG]
-    Ollama[Local Ollama\ne.g. qwen3:14b] <--> AIAssistant
+    DB --> HybridRetriever[Hybrid GraphRAG Retriever\nPlanner + FTS + Entities + Vectors + Graph + RRF]
+    HybridRetriever --> ContextBuilder[Context Builder\nDedup + Secret Redaction + Budget]
+    ContextBuilder --> AIAssistant[md-ai\nGrounded AI / RAG]
+    Ollama[Local Ollama LLM\ne.g. qwen3:14b] <--> AIAssistant
 
     Client[Web / UI Client] --> API
     User[Terminal User] --> CLI
     User --> AIAssistant
 ```
+
+*(See [`docs/Hybrid_GraphRAG_DE.md`](docs/Hybrid_GraphRAG_DE.md) and [`md-ai.example.yaml`](md-ai.example.yaml) for detailed Hybrid GraphRAG architecture, configuration, and query-class walkthroughs).*
 
 ## Setup & Build
 
