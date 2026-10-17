@@ -5,7 +5,7 @@ SPDX-License-Identifier: Apache-2.0
 
 # Feature Specification: Desktop App (Tauri + Angular + Spartan-ng)
 
-**Issue:** TBD  
+**Issue:** [#19](https://github.com/Zheng-Bote/md_indexer-searcher/issues/19)  
 **Status:** Specified (`/speckit.specify`)
 
 ## 1. Feature Intent

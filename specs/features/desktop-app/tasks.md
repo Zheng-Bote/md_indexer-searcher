@@ -5,13 +5,13 @@ SPDX-License-Identifier: Apache-2.0
 
 # Task Breakdown: Desktop App (Tauri + Angular + Spartan-ng)
 
-**Issue:** TBD  
+**Issue:** [#19](https://github.com/Zheng-Bote/md_indexer-searcher/issues/19)  
 **Spec:** [spec.md](./spec.md) · **Plan:** [plan.md](./plan.md)
 
 ## Open Decisions
 
 - [x] **Root spec scope:** `md-indexer.sdd` now lists `apps/` as the client-app layer (consumes `md-api` only, no direct DB or vault access).
-- [ ] **Issue number:** Create a GitHub issue and reference it in `spec.md`, `plan.md` and `tasks.md`.
+- [x] **Issue number:** [#19](https://github.com/Zheng-Bote/md_indexer-searcher/issues/19).
 
 ## Package & Implementation Tasks
 

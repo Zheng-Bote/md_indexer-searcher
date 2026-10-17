@@ -5,7 +5,7 @@ SPDX-License-Identifier: Apache-2.0
 
 # Architecture Plan: Desktop App (Tauri + Angular + Spartan-ng)
 
-**Issue:** TBD  
+**Issue:** [#19](https://github.com/Zheng-Bote/md_indexer-searcher/issues/19)  
 **Spec:** [spec.md](./spec.md)
 
 ## 1. Architectural Alignment (`md-indexer.sdd`)

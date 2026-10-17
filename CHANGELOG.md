@@ -28,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added `md-ai gaps` subcommand (`AuditEntityGaps`) to audit all indexed entities in `knowledge.db` for missing descriptions, missing ADR links/relations, and missing API sections.
   - Added `--stream` token streaming (`StreamingLLMProvider` / `OllamaProvider.GenerateStream`) for `md-ai ask` and `md-ai chat`.
 
-- **Desktop App (`apps/desktop`):**
+- **Desktop App (`apps/desktop`, `#19`):**
   - Added a Tauri v2 + Angular 22 + Spartan-ng desktop client with vault selection (native folder dialog), generation/embedding model selection, and grounded Q&A rendering (sanitized Markdown, sources, knowledge gaps).
   - The app runs `md-indexer` and `md-api` as sidecars on `127.0.0.1` with one database per vault; changing the vault or a model restarts them. Settings are restored on start.
   - Added `make desktop-sidecars`, `make desktop-dev` and `make desktop`.
