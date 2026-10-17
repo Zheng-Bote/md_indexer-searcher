@@ -29,6 +29,7 @@ func main() {
 	port := flag.String("port", "8080", "HTTP server port")
 	embedModel := flag.String("embed-model", "", "Ollama embedding model for vector retrieval, e.g. bge-m3 (empty disables embeddings)")
 	ollamaHost := flag.String("ollama-host", "http://localhost:11434", "Ollama API host URL for embeddings")
+	force := flag.Bool("force", false, "Force re-parsing all Markdown files and purge skipped/deleted entries without dropping unchanged embeddings")
 	flag.Parse()
 
 	cfg := config.Config{
@@ -43,7 +44,7 @@ func main() {
 	}
 	defer repo.Close()
 
-	indexerService := service.NewIndexerService(repo, cfg.Directory)
+	indexerService := service.NewIndexerService(repo, cfg.Directory).WithForce(*force)
 	if *embedModel != "" {
 		embedder := embedding.NewOllamaEmbedder(*ollamaHost, *embedModel, &http.Client{Timeout: 10 * time.Minute})
 		indexerService.WithEmbeddings(service.NewEmbeddingService(repo, embedder))

@@ -18,6 +18,7 @@ type IndexerService struct {
 	dir        string
 	parser     *parser.Parser
 	embeddings *EmbeddingService
+	force      bool
 }
 
 func NewIndexerService(repo *repository.SQLiteRepository, dir string) *IndexerService {
@@ -34,7 +35,14 @@ func (s *IndexerService) WithEmbeddings(e *EmbeddingService) *IndexerService {
 	return s
 }
 
+// WithForce forces re-parsing and upserting all Markdown documents even when their SHA-256 hash is unchanged.
+func (s *IndexerService) WithForce(force bool) *IndexerService {
+	s.force = force
+	return s
+}
+
 func (s *IndexerService) IndexAll(ctx context.Context) error {
+	seenPaths := make(map[string]bool)
 	err := filepath.Walk(s.dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -49,6 +57,7 @@ func (s *IndexerService) IndexAll(ctx context.Context) error {
 			return nil
 		}
 		if strings.HasSuffix(strings.ToLower(path), ".md") {
+			seenPaths[path] = true
 			return s.indexFile(ctx, path)
 		}
 		return nil
@@ -56,7 +65,28 @@ func (s *IndexerService) IndexAll(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if err := s.cleanupStaleDocuments(ctx, seenPaths); err != nil {
+		return err
+	}
 	s.embedPending(ctx)
+	return nil
+}
+
+// cleanupStaleDocuments removes previously indexed documents that now match ShouldSkipPath
+// (e.g. _templates_, .obsidian) or no longer exist on disk under the indexed directory.
+func (s *IndexerService) cleanupStaleDocuments(ctx context.Context, seenPaths map[string]bool) error {
+	dbPaths, err := s.repo.ListDocumentPaths(ctx)
+	if err != nil {
+		return err
+	}
+	for _, dbPath := range dbPaths {
+		if ShouldSkipPath(dbPath) || !seenPaths[dbPath] {
+			log.Info().Str("path", dbPath).Msg("Removing stale or excluded document from index")
+			if err := s.repo.RemoveDocument(ctx, dbPath); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 
@@ -108,8 +138,8 @@ func (s *IndexerService) indexFile(ctx context.Context, path string) error {
 		return err
 	}
 
-	// Skip if unchanged
-	if existingDoc != nil && existingDoc.Hash == doc.Hash {
+	// Skip if unchanged unless force mode is enabled
+	if !s.force && existingDoc != nil && existingDoc.Hash == doc.Hash {
 		log.Debug().Str("path", path).Msg("File unchanged, skipping")
 		return nil
 	}

@@ -282,7 +282,7 @@ func TestSQLiteFTS_GermanStemPrefixMatch(t *testing.T) {
 		t.Fatalf("failed to upsert doc: %v", err)
 	}
 
-	// "konfiguriere" stems to "konfigurier"* -> matches "Konfiguration";
+	// "konfiguriere" stems to "konfigur"* -> matches "Konfiguration";
 	// "verschlüsselung" stems to "verschlüssel"* -> matches "Verschlüsselungsverfahren".
 	cands, err := NewSQLiteFTS(repo.GetDB()).Search(context.Background(), Terms("Wie konfiguriere ich die Verschlüsselung?"), 10)
 	if err != nil {
@@ -290,5 +290,69 @@ func TestSQLiteFTS_GermanStemPrefixMatch(t *testing.T) {
 	}
 	if len(cands) != 1 || cands[0].SectionID != "cfg-1" {
 		t.Errorf("expected stem prefix match on cfg-1, got %+v", cands)
+	}
+}
+
+func TestRetriever_CaseInsensitiveLinksAndRelations(t *testing.T) {
+	repo, err := repository.NewSQLiteRepository(filepath.Join(t.TempDir(), "knowledge.db"))
+	if err != nil {
+		t.Fatalf("failed to init repository: %v", err)
+	}
+	t.Cleanup(func() { repo.Close() })
+
+	docs := []*entities.Document{
+		{
+			ID:    "doc-mqtt",
+			Path:  "docs/services/mqtt-broker.md",
+			Title: "MQTT Broker",
+			Sections: []entities.Section{
+				{ID: "mqtt-api", Heading: "API", Level: 2, Content: "Pub/Sub endpoint on port 1883."},
+			},
+			IsEntity:         true,
+			EntityType:       "Service",
+			EntityName:       "MQTT Broker",
+			EntityProperties: map[string]string{"description": "Central MQTT broker"},
+		},
+		{
+			ID:    "doc-fhem",
+			Path:  "docs/services/fhem.md",
+			Title: "FHEM Server",
+			Sections: []entities.Section{
+				{ID: "fhem-1", Heading: "Overview", Level: 2, Content: "Home automation server linking to [[mqtt broker]]."},
+			},
+			// Lowercase link target and lowercase entity relation target must still resolve to "MQTT Broker".
+			Links:            []entities.Link{{SourceDocID: "doc-fhem", TargetDocID: "mqtt broker"}},
+			IsEntity:         true,
+			EntityType:       "Service",
+			EntityName:       "FHEM Server",
+			EntityProperties: map[string]string{"description": "FHEM automation"},
+			EntityRelations:  []entities.EntityRelation{{SourceID: "FHEM Server", TargetID: "mqtt broker", Type: "USES"}},
+		},
+	}
+	for _, d := range docs {
+		if err := repo.UpsertDocument(context.Background(), d); err != nil {
+			t.Fatalf("failed to upsert %s: %v", d.Path, err)
+		}
+	}
+
+	g := NewSQLiteGraph(repo.GetDB())
+	res, err := g.Expand(context.Background(), []string{"doc-fhem"}, 1, 10)
+	if err != nil {
+		t.Fatalf("graph expand failed: %v", err)
+	}
+	if len(res.Candidates) == 0 || res.Candidates[0].DocumentID != "doc-mqtt" {
+		t.Fatalf("expected case-insensitive graph expansion to reach doc-mqtt, got %+v", res.Candidates)
+	}
+}
+
+func TestAuditEntityGaps(t *testing.T) {
+	db := setupDB(t)
+	gaps, err := AuditEntityGaps(context.Background(), db)
+	if err != nil {
+		t.Fatalf("AuditEntityGaps failed: %v", err)
+	}
+	// setupDB has "Encryption Service" (Component) with description and API section, but no ADR linked.
+	if len(gaps) != 1 || gaps[0].Entity != "Encryption Service" {
+		t.Errorf("expected 1 ADR gap for Encryption Service, got %+v", gaps)
 	}
 }

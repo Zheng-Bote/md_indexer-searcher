@@ -16,3 +16,9 @@ type LLMProvider interface {
 	// Name returns the provider identifier.
 	Name() string
 }
+
+// StreamingLLMProvider is an optional interface for LLM backends that support incremental token streaming.
+type StreamingLLMProvider interface {
+	LLMProvider
+	GenerateStream(ctx context.Context, req *model.GenerateRequest, onToken func(token string)) (*model.GenerateResponse, error)
+}

@@ -124,3 +124,56 @@ func TestNewRetriever_SelectsImplementation(t *testing.T) {
 		t.Errorf("expected classic retriever")
 	}
 }
+
+func TestAssistant_RetrieveOnlyAndAskStream(t *testing.T) {
+	db := setupAssistantTestDB(t)
+	cfg := config.DefaultConfig()
+	clf := classifier.NewRuleClassifier()
+	ret := NewRetriever(db, cfg)
+	cb := contextbuilder.NewContextBuilder(2000)
+	mockLLM := provider.NewMockProvider("Streamed grounded answer [Doc: docs/adr/001-sqlite.md#Decision].")
+
+	asst := NewAssistant(cfg, clf, ret, cb, mockLLM)
+	ctx := context.Background()
+
+	// 1. RetrieveOnly must not call the LLM provider.
+	dryAns, err := asst.RetrieveOnly(ctx, "What ADR was decided for SQLite?")
+	if err != nil {
+		t.Fatalf("RetrieveOnly failed: %v", err)
+	}
+	if len(mockLLM.Calls) != 0 {
+		t.Errorf("expected 0 LLM calls during RetrieveOnly, got %d", len(mockLLM.Calls))
+	}
+	if dryAns.Plan == nil || dryAns.Plan.QueryType != "fact" {
+		t.Errorf("expected plan in RetrieveOnly answer, got %+v", dryAns.Plan)
+	}
+	if len(dryAns.Sources) == 0 || dryAns.Sources[0].Path != "docs/adr/001-sqlite.md" {
+		t.Errorf("expected deterministic source in RetrieveOnly answer, got %+v", dryAns.Sources)
+	}
+
+	// 2. AskStream must invoke onPlan and onToken callbacks.
+	var gotPlan *model.RetrievalPlanInfo
+	var gotBlocks int
+	var streamed strings.Builder
+	streamAns, err := asst.AskStream(
+		ctx,
+		"What ADR was decided for SQLite?",
+		nil,
+		func(p *model.RetrievalPlanInfo, blocks int) {
+			gotPlan = p
+			gotBlocks = blocks
+		},
+		func(token string) {
+			streamed.WriteString(token)
+		},
+	)
+	if err != nil {
+		t.Fatalf("AskStream failed: %v", err)
+	}
+	if gotPlan == nil || gotBlocks == 0 {
+		t.Errorf("expected onPlan callback with non-nil plan and blocks > 0, got plan=%+v blocks=%d", gotPlan, gotBlocks)
+	}
+	if streamed.String() != streamAns.Answer {
+		t.Errorf("expected streamed tokens to match Answer, got %q vs %q", streamed.String(), streamAns.Answer)
+	}
+}

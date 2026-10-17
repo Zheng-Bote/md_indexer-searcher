@@ -151,6 +151,10 @@ Indexes a folder recursively and monitors it for future changes.
 
 ```bash
 ./bin/md-indexer -dir /path/to/obsidian/vault -db index.db -port 8080
+
+# Force re-parsing all notes and purging excluded (_templates_, .obsidian) or deleted paths
+# without dropping existing section_embeddings:
+./bin/md-indexer -dir /path/to/obsidian/vault -db index.db -force
 ```
 
 ### 2. md-search (CLI Explorer)
@@ -283,9 +287,19 @@ Sources:
 - examples/vault/TokenSigner.md
 ```
 
-#### JSON Output (For Automation / Scripting)
+#### JSON Output, Dry-Run Retrieval (`--retrieve-only`), Streaming (`--stream`) & Gap Audit (`gaps`)
 ```bash
+# Structured JSON output (for automation / scripting)
 ./bin/md-ai ask "What happens if UserDatabase is modified?" --db knowledge.db --json
+
+# Fast retrieval inspection (<50 ms) without calling the LLM
+./bin/md-ai ask "What happens if UserDatabase is modified?" --db knowledge.db --retrieve-only
+
+# Stream generated tokens live on CPU
+./bin/md-ai ask "How does the authentication flow work?" --db knowledge.db --stream
+
+# Audit all indexed Service, Component, and Pipeline entities for documentation gaps
+./bin/md-ai gaps --db knowledge.db
 ```
 
 #### Interactive Terminal Session (`chat`)

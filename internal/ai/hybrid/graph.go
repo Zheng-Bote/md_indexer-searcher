@@ -225,7 +225,7 @@ func (g *SQLiteGraph) neighbours(ctx context.Context, ids []string) ([]edge, err
 	linkRows, err := g.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT l.source_document_id, d.id
 		FROM links l
-		JOIN documents d ON d.title = l.target_document_id
+		JOIN documents d ON d.title = l.target_document_id COLLATE NOCASE
 		JOIN documents s ON s.id = l.source_document_id
 		WHERE l.source_document_id IN (%[1]s) OR d.id IN (%[1]s)`, ph), idArgs(ids, 2)...)
 	if err != nil {
@@ -245,17 +245,17 @@ func (g *SQLiteGraph) neighbours(ctx context.Context, ids []string) ([]edge, err
 	relRows, err := g.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT DISTINCT ds.id, dt.id, r.relation_type
 		FROM entity_relations r
-		LEFT JOIN entities es ON es.id = r.source_entity_id
-		LEFT JOIN entities et ON et.id = r.target_entity_id
-		JOIN documents ds ON ds.id = es.document_id OR ds.title = r.source_entity_id
-		JOIN documents dt ON dt.id = et.document_id OR dt.title = r.target_entity_id
+		LEFT JOIN entities es ON es.id = r.source_entity_id COLLATE NOCASE
+		LEFT JOIN entities et ON et.id = r.target_entity_id COLLATE NOCASE
+		JOIN documents ds ON ds.id = es.document_id OR ds.title = r.source_entity_id COLLATE NOCASE
+		JOIN documents dt ON dt.id = et.document_id OR dt.title = r.target_entity_id COLLATE NOCASE
 		WHERE r.relation_type NOT IN ('TAGS', 'ATTACHMENTS') AND (ds.id IN (%[1]s) OR dt.id IN (%[1]s))`, ph), idArgs(ids, 2)...)
 	if err != nil && strings.Contains(err.Error(), "no such column") {
 		relRows, err = g.db.QueryContext(ctx, fmt.Sprintf(`
 			SELECT ds.id, dt.id, r.relation_type
 			FROM entity_relations r
-			JOIN documents ds ON ds.title = r.source_entity_id
-			JOIN documents dt ON dt.title = r.target_entity_id
+			JOIN documents ds ON ds.title = r.source_entity_id COLLATE NOCASE
+			JOIN documents dt ON dt.title = r.target_entity_id COLLATE NOCASE
 			WHERE r.relation_type NOT IN ('TAGS', 'ATTACHMENTS') AND (ds.id IN (%[1]s) OR dt.id IN (%[1]s))`, ph), idArgs(ids, 2)...)
 	}
 	if err != nil {

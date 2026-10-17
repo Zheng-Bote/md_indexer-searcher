@@ -20,8 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Configuration & Documentation:**
   - Added YAML configuration loading (`~/.config/md-indexer/ai.yaml`, `./md-ai.yaml`, `--config` / `MD_AI_CONFIG`), full `MD_AI_*` environment variable support in `md-api`, `md-ai.example.yaml`, and `docs/Hybrid_GraphRAG_DE.md`.
 - **Indexer Data Quality & Retrieval Performance:**
-  - Added explicit `entities.document_id` column (with automatic migration backfill and fallback to `documents.title`), German stem/prefix matching in FTS5 (`stemTerm`), and an automatically invalidated in-memory vector cache in `SQLiteVectors`.
+  - Added explicit `entities.document_id` column (with automatic migration backfill and fallback to `documents.title`), case-insensitive title and entity resolution (`COLLATE NOCASE`), German stem/prefix matching in FTS5 (`stemTerm`), and an automatically invalidated in-memory vector cache in `SQLiteVectors`.
+  - Added `-force` flag to `md-indexer` (`IndexerService.WithForce`) to re-parse all Markdown files and purge stale/excluded paths (`_templates_`, `.obsidian`) from `knowledge.db` while preserving existing `section_embeddings`.
   - Normalized Obsidian wikilink targets (`[[Note|Alias]]`, `[[Note#Heading]]`) in inline links and frontmatter relations, excluded code blocks and inline code spans from link/tag extraction, skipped `_templates_` and hidden folders during indexing/watching, populated the `metadata` table, and added full cascade cleanup in `RemoveDocument`.
+- **CLI Retrieval Ergonomics (`cmd/md-ai`, `#18`):**
+  - Added `md-ai ask --retrieve-only` dry-run mode to inspect query plans, budgeted context sources, reasoning chains, architecture summaries, and knowledge gaps in `<50 ms` without calling Ollama.
+  - Added `md-ai gaps` subcommand (`AuditEntityGaps`) to audit all indexed entities in `knowledge.db` for missing descriptions, missing ADR links/relations, and missing API sections.
+  - Added `--stream` token streaming (`StreamingLLMProvider` / `OllamaProvider.GenerateStream`) for `md-ai ask` and `md-ai chat`.
 
 ### Changed
 - **Ollama & Model Defaults (`#12`, `#13`, `#16`):**

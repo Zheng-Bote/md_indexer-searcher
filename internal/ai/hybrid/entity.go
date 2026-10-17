@@ -47,8 +47,8 @@ const (
 // Longer names rank first because they are more specific.
 const entityMatchQuery = `
 	SELECT e.id, e.name, COALESCE(t.name, e.type_id, ''),
-		COALESCE((SELECT d.id FROM documents d WHERE d.id = e.document_id OR d.title = e.id LIMIT 1), ''),
-		COALESCE((SELECT d.path FROM documents d WHERE d.id = e.document_id OR d.title = e.id LIMIT 1), ''),
+		COALESCE((SELECT d.id FROM documents d WHERE d.id = e.document_id OR d.title = e.id COLLATE NOCASE LIMIT 1), ''),
+		COALESCE((SELECT d.path FROM documents d WHERE d.id = e.document_id OR d.title = e.id COLLATE NOCASE LIMIT 1), ''),
 		COALESCE((SELECT p.property_value FROM entity_properties p WHERE p.entity_id = e.id AND p.property_key = 'description' LIMIT 1), ''),
 		COALESCE((SELECT p.property_value FROM entity_properties p WHERE p.entity_id = e.id AND p.property_key = 'api' LIMIT 1), '')
 	FROM entities e
@@ -60,8 +60,8 @@ const entityMatchQuery = `
 
 const entityMatchQueryLegacy = `
 	SELECT e.id, e.name, COALESCE(t.name, e.type_id, ''),
-		COALESCE((SELECT d.id FROM documents d WHERE d.title = e.id LIMIT 1), ''),
-		COALESCE((SELECT d.path FROM documents d WHERE d.title = e.id LIMIT 1), ''),
+		COALESCE((SELECT d.id FROM documents d WHERE d.title = e.id COLLATE NOCASE LIMIT 1), ''),
+		COALESCE((SELECT d.path FROM documents d WHERE d.title = e.id COLLATE NOCASE LIMIT 1), ''),
 		COALESCE((SELECT p.property_value FROM entity_properties p WHERE p.entity_id = e.id AND p.property_key = 'description' LIMIT 1), ''),
 		COALESCE((SELECT p.property_value FROM entity_properties p WHERE p.entity_id = e.id AND p.property_key = 'api' LIMIT 1), '')
 	FROM entities e
@@ -69,6 +69,30 @@ const entityMatchQueryLegacy = `
 	WHERE e.type_id != 'unresolved' AND length(e.name) >= 3 AND ? LIKE '%' || e.name || '%'
 	ORDER BY length(e.name) DESC, e.name
 	LIMIT ?;
+`
+
+const entityAuditQuery = `
+	SELECT e.id, e.name, COALESCE(t.name, e.type_id, ''),
+		COALESCE((SELECT d.id FROM documents d WHERE d.id = e.document_id OR d.title = e.id COLLATE NOCASE LIMIT 1), ''),
+		COALESCE((SELECT d.path FROM documents d WHERE d.id = e.document_id OR d.title = e.id COLLATE NOCASE LIMIT 1), ''),
+		COALESCE((SELECT p.property_value FROM entity_properties p WHERE p.entity_id = e.id AND p.property_key = 'description' LIMIT 1), ''),
+		COALESCE((SELECT p.property_value FROM entity_properties p WHERE p.entity_id = e.id AND p.property_key = 'api' LIMIT 1), '')
+	FROM entities e
+	LEFT JOIN entity_types t ON t.id = e.type_id
+	WHERE e.type_id != 'unresolved'
+	ORDER BY e.name;
+`
+
+const entityAuditQueryLegacy = `
+	SELECT e.id, e.name, COALESCE(t.name, e.type_id, ''),
+		COALESCE((SELECT d.id FROM documents d WHERE d.title = e.id COLLATE NOCASE LIMIT 1), ''),
+		COALESCE((SELECT d.path FROM documents d WHERE d.title = e.id COLLATE NOCASE LIMIT 1), ''),
+		COALESCE((SELECT p.property_value FROM entity_properties p WHERE p.entity_id = e.id AND p.property_key = 'description' LIMIT 1), ''),
+		COALESCE((SELECT p.property_value FROM entity_properties p WHERE p.entity_id = e.id AND p.property_key = 'api' LIMIT 1), '')
+	FROM entities e
+	LEFT JOIN entity_types t ON t.id = e.type_id
+	WHERE e.type_id != 'unresolved'
+	ORDER BY e.name;
 `
 
 type entityHit struct {
@@ -134,6 +158,51 @@ func (s *SQLiteEntities) Find(ctx context.Context, query string) (*EntityResult,
 	return res, nil
 }
 
+// AuditEntityGaps inspects all non-unresolved entities in the database and returns deterministic documentation gaps.
+func AuditEntityGaps(ctx context.Context, db *sql.DB) ([]model.KnowledgeGap, error) {
+	return NewSQLiteEntities(db).AuditGaps(ctx)
+}
+
+// AuditGaps inspects all non-unresolved entities in the database and returns deterministic documentation gaps.
+func (s *SQLiteEntities) AuditGaps(ctx context.Context) ([]model.KnowledgeGap, error) {
+	rows, err := s.db.QueryContext(ctx, entityAuditQuery)
+	if err != nil && strings.Contains(err.Error(), "no such column") {
+		rows, err = s.db.QueryContext(ctx, entityAuditQueryLegacy)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("entity audit: %w", err)
+	}
+	var hits []entityHit
+	for rows.Next() {
+		var h entityHit
+		if err := rows.Scan(&h.id, &h.match.Name, &h.match.Type, &h.docID, &h.match.DocumentURI, &h.match.Description, &h.apiProp); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("entity audit scan: %w", err)
+		}
+		hits = append(hits, h)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("entity audit: %w", err)
+	}
+
+	var allGaps []model.KnowledgeGap
+	for i := range hits {
+		h := &hits[i]
+		var cands []Candidate
+		if h.docID != "" {
+			cands, _ = s.sections(ctx, h)
+		}
+		rels, _ := s.relations(ctx, h.id, 100)
+		gaps, err := s.detectEntityGaps(ctx, h, cands, rels)
+		if err != nil {
+			return nil, err
+		}
+		allGaps = append(allGaps, gaps...)
+	}
+	return allGaps, nil
+}
+
 func (s *SQLiteEntities) detectEntityGaps(ctx context.Context, h *entityHit, cands []Candidate, rels []model.EntityRelationMatch) ([]model.KnowledgeGap, error) {
 	var gaps []model.KnowledgeGap
 	if strings.TrimSpace(h.match.Description) == "" && len(cands) == 0 {
@@ -162,7 +231,7 @@ func (s *SQLiteEntities) detectEntityGaps(ctx context.Context, h *entityHit, can
 		err := s.db.QueryRowContext(ctx, `
 			SELECT count(*) FROM links l
 			WHERE (l.source_document_id = ? AND lower(l.target_document_id) LIKE '%adr%')
-			   OR (l.target_document_id = ? AND EXISTS (SELECT 1 FROM documents d WHERE d.id = l.source_document_id AND (lower(d.title) LIKE '%adr%' OR lower(d.path) LIKE '%adr%')))`,
+			   OR (l.target_document_id = ? COLLATE NOCASE AND EXISTS (SELECT 1 FROM documents d WHERE d.id = l.source_document_id AND (lower(d.title) LIKE '%adr%' OR lower(d.path) LIKE '%adr%')))`,
 			h.docID, h.id).Scan(&count)
 		if err == nil && count > 0 {
 			hasADR = true
@@ -223,9 +292,9 @@ func (s *SQLiteEntities) sections(ctx context.Context, h *entityHit) ([]Candidat
 func (s *SQLiteEntities) relations(ctx context.Context, entityID string, limit int) ([]model.EntityRelationMatch, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT r.source_entity_id, r.relation_type, r.target_entity_id,
-			COALESCE((SELECT d.path FROM documents d WHERE d.title = r.source_entity_id LIMIT 1), '')
+			COALESCE((SELECT d.path FROM documents d WHERE d.title = r.source_entity_id COLLATE NOCASE LIMIT 1), '')
 		FROM entity_relations r
-		WHERE r.source_entity_id = ? OR r.target_entity_id = ?
+		WHERE r.source_entity_id = ? COLLATE NOCASE OR r.target_entity_id = ? COLLATE NOCASE
 		LIMIT ?;`, entityID, entityID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("entity relations: %w", err)

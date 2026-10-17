@@ -122,3 +122,46 @@ func TestOllamaProvider_Error(t *testing.T) {
 		t.Fatal("expected error on 404 status, got nil")
 	}
 }
+
+func TestOllamaProvider_GenerateStream(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req ollamaGenerateRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("failed to decode request: %v", err)
+		}
+		if !req.Stream {
+			t.Errorf("expected stream=true in GenerateStream request")
+		}
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		chunks := []ollamaGenerateResponse{
+			{Response: "Hello ", Model: req.Model, Done: false},
+			{Response: "world!", Model: req.Model, Done: false},
+			{Response: "", Model: req.Model, PromptEvalCount: 12, EvalCount: 4, Done: true},
+		}
+		enc := json.NewEncoder(w)
+		for _, c := range chunks {
+			_ = enc.Encode(c)
+		}
+	})
+
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	prov := NewOllamaProvider(server.URL, server.Client())
+	var streamed string
+	res, err := prov.GenerateStream(context.Background(), &model.GenerateRequest{
+		Model:  "qwen3:14b",
+		Prompt: "Say hello",
+	}, func(tok string) {
+		streamed += tok
+	})
+	if err != nil {
+		t.Fatalf("GenerateStream failed: %v", err)
+	}
+	if streamed != "Hello world!" || res.Response != "Hello world!" {
+		t.Errorf("expected 'Hello world!', got streamed=%q response=%q", streamed, res.Response)
+	}
+	if res.PromptTokens != 12 || res.OutputTokens != 4 {
+		t.Errorf("unexpected token counts: %+v", res)
+	}
+}

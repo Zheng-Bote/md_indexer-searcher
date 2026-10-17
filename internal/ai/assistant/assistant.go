@@ -71,6 +71,18 @@ func NewAssistant(
 
 // Ask processes a single question and returns the grounded answer.
 func (a *Assistant) Ask(ctx context.Context, question string, session *conversation.Session) (*model.Answer, error) {
+	return a.AskStream(ctx, question, session, nil, nil)
+}
+
+// AskStream processes a single question, optionally reporting retrieval plan telemetry via onPlan
+// and streaming generated tokens via onToken when the provider supports StreamingLLMProvider.
+func (a *Assistant) AskStream(
+	ctx context.Context,
+	question string,
+	session *conversation.Session,
+	onPlan func(plan *model.RetrievalPlanInfo, blocks int),
+	onToken func(token string),
+) (*model.Answer, error) {
 	// 1. Classify intent
 	intent := a.classifier.Classify(question)
 
@@ -83,6 +95,9 @@ func (a *Assistant) Ask(ctx context.Context, question string, session *conversat
 	// 3. Build prioritized context
 	blocks := a.contextBuilder.BuildContext(retrievalRes)
 	formattedContext := a.contextBuilder.FormatContext(blocks)
+	if onPlan != nil {
+		onPlan(retrievalRes.Plan, len(blocks))
+	}
 
 	// 4. Inject session history if available
 	fullQuestion := question
@@ -106,7 +121,19 @@ func (a *Assistant) Ask(ctx context.Context, question string, session *conversat
 		ContextWindow: contextWindow(sysPrompt, userPrompt, a.cfg.MaxTokens),
 	}
 
-	genResp, err := a.provider.Generate(ctx, req)
+	var genResp *model.GenerateResponse
+	if onToken != nil {
+		if sp, ok := a.provider.(provider.StreamingLLMProvider); ok {
+			genResp, err = sp.GenerateStream(ctx, req, onToken)
+		} else {
+			genResp, err = a.provider.Generate(ctx, req)
+			if err == nil && genResp.Response != "" {
+				onToken(genResp.Response)
+			}
+		}
+	} else {
+		genResp, err = a.provider.Generate(ctx, req)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("llm generation failed: %w", err)
 	}
@@ -130,6 +157,51 @@ func (a *Assistant) Ask(ctx context.Context, question string, session *conversat
 	}
 
 	return answer, nil
+}
+
+// RetrieveOnly executes intent classification, query planning, hybrid retrieval, and context budgeting
+// without calling the LLM provider. Useful for fast (<50 ms) retrieval inspection and debugging.
+func (a *Assistant) RetrieveOnly(ctx context.Context, question string) (*model.Answer, error) {
+	intent := a.classifier.Classify(question)
+	retrievalRes, err := a.retriever.Retrieve(ctx, question, intent)
+	if err != nil {
+		return nil, fmt.Errorf("retrieval failed: %w", err)
+	}
+
+	blocks := a.contextBuilder.BuildContext(retrievalRes)
+	formattedContext := a.contextBuilder.FormatContext(blocks)
+	approxTokens := (len(formattedContext) + 2) / 3
+
+	var summary strings.Builder
+	if retrievalRes.Plan != nil {
+		fmt.Fprintf(&summary, "[Retrieve-Only] Plan: %s (FTS=%v, Vectors=%v, Entities=%v, Graph=%v depth=%d)\n",
+			retrievalRes.Plan.QueryType,
+			retrievalRes.Plan.UseFTS,
+			retrievalRes.Plan.UseVectors,
+			retrievalRes.Plan.UseEntities,
+			retrievalRes.Plan.UseGraph,
+			retrievalRes.Plan.GraphDepth,
+		)
+	} else {
+		fmt.Fprintf(&summary, "[Retrieve-Only] Intent: %s\n", intent)
+	}
+	fmt.Fprintf(&summary, "Context blocks: %d (~%d tokens) | Entities: %d | Relations: %d | Reasoning chains: %d",
+		len(blocks), approxTokens, len(retrievalRes.Entities), len(retrievalRes.Relations), len(retrievalRes.Chains))
+	for _, b := range blocks {
+		if b.Source == "architecture-model" || (b.Source == "knowledge-graph" && b.Section == "reasoning-chains") {
+			summary.WriteString("\n\n" + strings.TrimSpace(b.Content))
+		}
+	}
+
+	return &model.Answer{
+		Question: question,
+		Answer:   summary.String(),
+		Intent:   intent,
+		Plan:     retrievalRes.Plan,
+		Model:    "none (retrieve-only)",
+		Sources:  collectSources("", blocks, retrievalRes.Snippets),
+		Gaps:     retrievalRes.Gaps,
+	}, nil
 }
 
 // collectSources merges explicit [Doc: ...] citations from the LLM answer with the document

@@ -73,7 +73,7 @@ func migrate(db *sql.DB) error {
 	}
 	// Ensure existing databases built before entities.document_id was added get the column and backfill.
 	_, _ = db.Exec("ALTER TABLE entities ADD COLUMN document_id TEXT")
-	_, _ = db.Exec("UPDATE entities SET document_id = (SELECT d.id FROM documents d WHERE d.title = entities.id LIMIT 1) WHERE (document_id IS NULL OR document_id = '') AND type_id != 'unresolved'")
+	_, _ = db.Exec("UPDATE entities SET document_id = (SELECT d.id FROM documents d WHERE d.title = entities.id COLLATE NOCASE LIMIT 1) WHERE (document_id IS NULL OR document_id = '') AND type_id != 'unresolved'")
 	return nil
 }
 
@@ -348,4 +348,23 @@ func (r *SQLiteRepository) GetAllDocuments(ctx context.Context) ([]entities.Docu
 		results = append(results, doc)
 	}
 	return results, nil
+}
+
+// ListDocumentPaths returns all document file paths currently stored in the database.
+func (r *SQLiteRepository) ListDocumentPaths(ctx context.Context) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx, "SELECT path FROM documents")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var paths []string
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			return nil, err
+		}
+		paths = append(paths, p)
+	}
+	return paths, rows.Err()
 }
