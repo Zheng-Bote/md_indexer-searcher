@@ -1,16 +1,20 @@
 # Markdown Knowledge Indexer & Search Engine
 
-This project provides a local, lightweight knowledge-graph and search infrastructure for Markdown-based note systems (such as Obsidian). The system consists of three core components:
+This project provides a local, lightweight knowledge-graph and search infrastructure for Markdown-based note systems (such as Obsidian). The system consists of the following components:
 
-1. **md-indexer**: Monitors Markdown files and incrementally builds a SQLite-based index and knowledge graph. Markdown files remain the single source of truth.
+1. **md-indexer**: Monitors Markdown files and incrementally builds a SQLite-based index and knowledge graph (optionally with local section embeddings). Markdown files remain the single source of truth.
 2. **md-search**: A CLI knowledge explorer that operates on the SQLite database (without filesystem access) to perform full-text search, backlink, and graph traversal queries.
-3. **md-api**: A REST API that exposes the search and graph features over HTTP.
+3. **md-api**: A REST API that exposes the search and graph features over HTTP, plus the grounded AI endpoints when started with `-ai`.
+4. **md-ai**: A grounded AI assistant (Hybrid GraphRAG) on top of the index, using a local Ollama instance.
+5. **Desktop App** (`apps/desktop`): A Tauri + Angular + Spartan-ng client to select a vault and models and ask questions, running `md-indexer` and `md-api` as local sidecars.
 
 ## Architectural Principles
 
 The system is based on the principles of **Clean Architecture**:
 - **Source of Truth**: Markdown files in the filesystem are the only truth. The SQLite database is a pure materialized index and can be deleted and rebuilt at any time.
 - **Separation of Concerns**: Strict separation between file parsing (`md-indexer`) and query operations (`md-search` & `md-api`). The search layer has no filesystem access and reads exclusively from the database.
+- **Clients via API only**: Client apps under `apps/` talk to the system exclusively through `md-api`; they never open the database or the vault files directly.
+- **Concurrent Access**: File databases run in SQLite WAL mode with a busy timeout, so `md-indexer` (writer) and `md-api` / `md-search` (readers) can share one database.
 - **Graph Engine via Recursive CTEs**: Graph traversals (dependency trees, impact analysis, shortest paths) are executed in SQLite using recursive Common Table Expressions (`WITH RECURSIVE`), avoiding N+1 query loops while remaining CGO-free.
 
 ## Data Model & ER Diagram (SQLite & FTS5)
@@ -112,9 +116,13 @@ graph TD
     ContextBuilder --> AIAssistant[md-ai\nGrounded AI / RAG]
     Ollama[Local Ollama LLM\ne.g. qwen3:14b] <--> AIAssistant
 
+    API --> AIAssistant
+    Desktop[Desktop App\nTauri + Angular\napps/desktop] -->|HTTP 127.0.0.1| API
+    Desktop -.->|runs as sidecars| IndexerService
     Client[Web / UI Client] --> API
     User[Terminal User] --> CLI
     User --> AIAssistant
+    User --> Desktop
 ```
 
 *(See [`docs/Hybrid_GraphRAG_DE.md`](docs/Hybrid_GraphRAG_DE.md) and [`md-ai.example.yaml`](md-ai.example.yaml) for detailed Hybrid GraphRAG architecture, configuration, and query-class walkthroughs).*
@@ -129,6 +137,10 @@ make build    # md-indexer
 make search   # md-search
 make api      # md-api
 make ai       # md-ai (grounded AI assistant)
+
+# Desktop app (see "Desktop App" below)
+make desktop-dev   # build md-indexer + md-api as sidecars and start the app in dev mode
+make desktop       # build installable bundles
 
 # Run all tests
 make test
@@ -151,6 +163,10 @@ Indexes a folder recursively and monitors it for future changes.
 
 ```bash
 ./bin/md-indexer -dir /path/to/obsidian/vault -db index.db -port 8080
+
+# Compute local section embeddings for vector retrieval (Ollama, e.g. bge-m3)
+# and listen on localhost only:
+./bin/md-indexer -dir /path/to/obsidian/vault -db index.db -embed-model bge-m3 -host 127.0.0.1
 
 # Force re-parsing all notes and purging excluded (_templates_, .obsidian) or deleted paths
 # without dropping existing section_embeddings:
