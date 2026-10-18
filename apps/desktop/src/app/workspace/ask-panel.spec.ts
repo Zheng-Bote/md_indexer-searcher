@@ -26,7 +26,19 @@ describe('AskPanel', () => {
     ask = vi.fn();
     TestBed.configureTestingModule({
       providers: [
-        { provide: ApiClient, useValue: { ask } },
+        {
+          provide: ApiClient,
+          useValue: {
+            ask,
+            documentByPath: vi.fn(async (path: string) => ({
+              id: 'o',
+              path,
+              title: 'Old Source',
+              markdown: '# Old Source',
+              links: null,
+            })),
+          },
+        },
         { provide: WorkspaceService, useValue: { ready: signal(true) } },
       ],
     });
@@ -79,5 +91,29 @@ describe('AskPanel', () => {
 
     expect(el.textContent).toContain('Frage fehlgeschlagen');
     expect(el.textContent).not.toContain('Alte Antwort');
+  });
+
+  it('opens a source in the viewer and returns to the unchanged answer', async () => {
+    ask.mockResolvedValueOnce(answer('Alte Antwort'));
+    await submit('erste Frage');
+    await settle();
+
+    const sourceButton = el.querySelector('app-answer-view li button') as HTMLButtonElement;
+    sourceButton.focus();
+    sourceButton.click();
+    await settle();
+    expect(el.querySelector('[role="dialog"] article h1')?.textContent).toBe('Old Source');
+
+    (
+      Array.from(el.querySelectorAll('[role="dialog"] button')).find(
+        (b) => b.textContent?.trim() === 'Schließen',
+      ) as HTMLButtonElement
+    ).click();
+    await settle();
+
+    expect(el.querySelector('[role="dialog"]')).toBeNull();
+    expect(el.textContent).toContain('Alte Antwort');
+    expect(ask).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(el.querySelector('app-answer-view li button'));
   });
 });

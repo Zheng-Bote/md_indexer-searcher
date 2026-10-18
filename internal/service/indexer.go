@@ -138,8 +138,8 @@ func (s *IndexerService) indexFile(ctx context.Context, path string) error {
 		return err
 	}
 
-	// Skip if unchanged unless force mode is enabled
-	if !s.force && existingDoc != nil && existingDoc.Hash == doc.Hash {
+	// Skip if unchanged unless force mode is enabled or the row predates raw Markdown storage
+	if !s.force && existingDoc != nil && existingDoc.Hash == doc.Hash && existingDoc.HasMarkdown {
 		log.Debug().Str("path", path).Msg("File unchanged, skipping")
 		return nil
 	}

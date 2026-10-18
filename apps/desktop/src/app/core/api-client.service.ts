@@ -1,10 +1,16 @@
 // SPDX-FileCopyrightText: 2026 Zheng-Bote
 // SPDX-License-Identifier: Apache-2.0
 
-import { inject, Service } from '@angular/core';
-import { fetch } from '@tauri-apps/plugin-http';
-import { Answer, ApiEnvelope, ModelsResponse } from './api.types';
+import { inject, InjectionToken, Service } from '@angular/core';
+import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
+import { Answer, ApiEnvelope, DocumentView, ModelsResponse } from './api.types';
 import { BackendService } from './backend.service';
+
+/** Transport used by ApiClient; tests provide a stub instead of module-mocking the Tauri plugin. */
+export const HTTP_FETCH = new InjectionToken<typeof tauriFetch>('HTTP_FETCH', {
+  providedIn: 'root',
+  factory: () => tauriFetch,
+});
 
 /**
  * HTTP client for md-api. Requests go through the Tauri HTTP plugin, which is scoped to
@@ -13,6 +19,7 @@ import { BackendService } from './backend.service';
 @Service()
 export class ApiClient {
   private readonly backend = inject(BackendService);
+  private readonly fetch = inject(HTTP_FETCH);
 
   listModels(): Promise<ModelsResponse> {
     return this.request<ModelsResponse>('/api/ai/models');
@@ -26,12 +33,17 @@ export class ApiClient {
     });
   }
 
+  /** Loads an indexed document by its exact path. */
+  documentByPath(path: string): Promise<DocumentView> {
+    return this.request<DocumentView>(`/api/document?${new URLSearchParams({ path })}`);
+  }
+
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
     const baseUrl = this.backend.apiBaseUrl();
     if (!baseUrl) {
       throw new Error('Backend ist nicht bereit.');
     }
-    const response = await fetch(baseUrl + path, init);
+    const response = await this.fetch(baseUrl + path, init);
     let body: ApiEnvelope<T>;
     try {
       body = (await response.json()) as ApiEnvelope<T>;

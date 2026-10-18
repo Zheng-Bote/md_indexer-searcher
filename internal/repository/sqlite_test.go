@@ -4,6 +4,7 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"path/filepath"
 	"sync"
@@ -388,5 +389,32 @@ func TestSQLiteRepository_ConcurrentWriterAndReader(t *testing.T) {
 	close(errs)
 	for err := range errs {
 		t.Error(err)
+	}
+}
+
+func TestSQLiteRepository_MigratesDocumentsMarkdownColumn(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "legacy.db")
+	legacy, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open legacy db: %v", err)
+	}
+	if _, err := legacy.Exec(`CREATE TABLE documents (id TEXT PRIMARY KEY, path TEXT UNIQUE, title TEXT, hash TEXT, modified_at DATETIME, indexed_at DATETIME);
+		INSERT INTO documents (id, path, title, hash) VALUES ('d1', '/vault/A.md', 'A', 'h1');`); err != nil {
+		t.Fatalf("seed legacy db: %v", err)
+	}
+	legacy.Close()
+
+	repo, err := NewSQLiteRepository(dbPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteRepository on legacy db: %v", err)
+	}
+	defer repo.Close()
+
+	doc, err := repo.GetDocumentByPath(context.Background(), "/vault/A.md")
+	if err != nil || doc == nil {
+		t.Fatalf("GetDocumentByPath after migration: %v, %v", doc, err)
+	}
+	if doc.HasMarkdown {
+		t.Errorf("Expected legacy row without Markdown to report HasMarkdown=false")
 	}
 }

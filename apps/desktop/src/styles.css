@@ -123,3 +123,16 @@
   background: var(--muted);
   padding: 0.75rem;
 }
+.answer-markdown a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.answer-markdown table {
+  border-collapse: collapse;
+}
+.answer-markdown th,
+.answer-markdown td {
+  border: 1px solid var(--border);
+  padding: 0.25rem 0.5rem;
+}

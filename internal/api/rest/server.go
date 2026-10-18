@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/md-indexer/internal/ai/assistant"
 	"github.com/md-indexer/internal/ai/provider"
+	"github.com/md-indexer/internal/entities"
 	"github.com/md-indexer/internal/search"
 )
 
@@ -75,6 +76,27 @@ func (s *Server) Handler() http.Handler {
 		name := chi.URLParam(r, "name")
 		res, err := s.searchEngine.FindDocument(r.Context(), name)
 		respondJSON(w, res, err)
+	})
+
+	// Serves raw Markdown from the index only; paths that are not indexed documents yield 404.
+	r.Get("/api/document", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		var doc *entities.DocumentView
+		var err error
+		switch {
+		case q.Get("path") != "":
+			doc, err = s.searchEngine.Document(r.Context(), q.Get("path"))
+		case q.Get("title") != "":
+			doc, err = s.searchEngine.ResolveDocument(r.Context(), q.Get("title"), q.Get("from"))
+		default:
+			http.Error(w, `{"success":false,"error":"path or title required"}`, http.StatusBadRequest)
+			return
+		}
+		if err == nil && doc == nil {
+			http.Error(w, `{"success":false,"error":"document not found"}`, http.StatusNotFound)
+			return
+		}
+		respondJSON(w, doc, err)
 	})
 
 	r.Get("/api/entities/{name}", func(w http.ResponseWriter, r *http.Request) {

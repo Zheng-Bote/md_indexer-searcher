@@ -40,6 +40,7 @@ erDiagram
         string hash
         datetime modified_at
         datetime indexed_at
+        string markdown
     }
     sections {
         string id PK
@@ -216,6 +217,7 @@ make api-run
 - `GET /health`: System status
 - `GET /api/search?q=...`: FTS5 full-text search
 - `GET /api/documents/{name}`: Load a specific document
+- `GET /api/document?path=...` or `?title=...&from=...`: Original Markdown of an indexed document plus its resolved wikilinks (served from the index, never from disk)
 - `GET /api/entities/{name}`: Load an extracted entity (type + properties)
 - `GET /api/backlinks/{name}`: Find documents that link to `{name}`
 - `GET /api/impact/{name}`: Recursive impact analysis for an entity
@@ -229,7 +231,7 @@ Use `-host 127.0.0.1` to listen on localhost only (`md-indexer` accepts the same
 
 ### 4. Desktop App (`apps/desktop`)
 
-A Tauri v2 + Angular + Spartan-ng desktop client: pick a vault folder, choose the generation and embedding model, and ask questions. It runs `md-indexer` and `md-api` as local sidecars (bound to `127.0.0.1`) and keeps one database per vault in the app data directory. Any change of vault or model restarts the sidecars.
+A Tauri v2 + Angular + Spartan-ng desktop client: pick a vault folder, choose the generation and embedding model, and ask questions. It runs `md-indexer` and `md-api` as local sidecars (bound to `127.0.0.1`) and keeps one database per vault in the app data directory. Any change of vault or model restarts the sidecars. Cited sources open in an inline Markdown viewer; wikilinks navigate within the vault, and "Zurück"/"Schließen" return to the unchanged answer.
 
 ```bash
 make desktop-dev   # build sidecars and start the app in dev mode

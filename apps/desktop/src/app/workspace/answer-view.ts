@@ -1,11 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Zheng-Bote
 // SPDX-License-Identifier: Apache-2.0
 
-import { Component, computed, input } from '@angular/core';
+import { Component, computed, input, output } from '@angular/core';
 import { HlmBadgeImports } from '@spartan-ng/helm/badge';
 import { HlmCardImports } from '@spartan-ng/helm/card';
 import { marked } from 'marked';
-import { Answer } from '../core/api.types';
+import { Answer, SourceCitation } from '../core/api.types';
 
 @Component({
   selector: 'app-answer-view',
@@ -31,10 +31,19 @@ import { Answer } from '../core/api.types';
             <ul class="flex flex-col gap-1 text-sm">
               @for (source of sources(); track $index) {
                 <li>
-                  <span class="font-mono" [title]="source.path">{{ fileName(source.path) }}</span>
-                  @if (source.section) {
-                    <span class="text-muted-foreground"> · {{ source.section }}</span>
-                  }
+                  <button
+                    type="button"
+                    class="hover:bg-muted focus-visible:ring-ring rounded px-1 text-start focus-visible:ring-2 focus-visible:outline-none"
+                    [title]="source.path"
+                    (click)="sourceSelected.emit(source)"
+                  >
+                    <span class="font-mono underline-offset-2 hover:underline">{{
+                      fileName(source.path)
+                    }}</span>
+                    @if (source.section) {
+                      <span class="text-muted-foreground"> · {{ source.section }}</span>
+                    }
+                  </button>
                 </li>
               }
             </ul>
@@ -62,6 +71,8 @@ export class AnswerView {
   readonly answer = input.required<Answer>();
   /** Wall-clock time from sending the question to receiving the answer. */
   readonly durationMs = input<number | null>(null);
+  /** Emitted when the user opens a cited source. */
+  readonly sourceSelected = output<SourceCitation>();
 
   protected readonly html = computed(() => marked.parse(this.answer().answer, { async: false }));
   protected readonly sources = computed(() => this.answer().sources ?? []);

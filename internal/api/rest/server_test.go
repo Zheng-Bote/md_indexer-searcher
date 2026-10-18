@@ -250,3 +250,54 @@ func TestRESTServer_AIModels(t *testing.T) {
 		})
 	}
 }
+
+func TestRESTServer_Document(t *testing.T) {
+	repo, handler := setupTestServer(t)
+	defer repo.Close()
+	note := &entities.Document{
+		ID: "doc-api-3", Path: "/vault/Notes/Overview.md", Title: "Overview",
+		Markdown: "# Overview\n\nUses [[bankgateway]].",
+		Links:    []entities.Link{{SourceDocID: "doc-api-3", TargetDocID: "bankgateway"}},
+	}
+	if err := repo.UpsertDocument(context.Background(), note); err != nil {
+		t.Fatalf("Upsert failed: %v", err)
+	}
+
+	tests := []struct {
+		name       string
+		path       string
+		wantStatus int
+		wantPath   string
+	}{
+		{"by path", "/api/document?path=%2Fvault%2FNotes%2FOverview.md", http.StatusOK, "/vault/Notes/Overview.md"},
+		{"by title", "/api/document?title=overview&from=%2Fvault%2FX.md", http.StatusOK, "/vault/Notes/Overview.md"},
+		{"unknown path", "/api/document?path=%2Fetc%2Fpasswd", http.StatusNotFound, ""},
+		{"unknown title", "/api/document?title=Kubernetes", http.StatusNotFound, ""},
+		{"missing parameters", "/api/document", http.StatusBadRequest, ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tc.path, nil))
+			if rec.Code != tc.wantStatus {
+				t.Fatalf("status %d, want %d. Body: %s", rec.Code, tc.wantStatus, rec.Body.String())
+			}
+			var body struct {
+				Success bool                  `json:"success"`
+				Data    entities.DocumentView `json:"data"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatalf("invalid JSON: %v", err)
+			}
+			if body.Success != (tc.wantStatus == http.StatusOK) || body.Data.Path != tc.wantPath {
+				t.Fatalf("unexpected body %+v", body)
+			}
+			if tc.wantStatus == http.StatusOK {
+				want := entities.ResolvedLink{Target: "bankgateway", Path: "/vault/BankGateway.md"}
+				if body.Data.Markdown != note.Markdown || len(body.Data.Links) != 1 || body.Data.Links[0] != want {
+					t.Errorf("unexpected document %+v", body.Data)
+				}
+			}
+		})
+	}
+}

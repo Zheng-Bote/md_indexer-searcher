@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Desktop document viewer (`#22`):** Cited sources open as rendered Markdown in an overlay above the answer, scrolled to the cited section. Resolvable wikilinks navigate to other documents of the current vault with a back history; "Schließen"/`Esc` returns to the unchanged answer. Frontmatter is hidden, rendered HTML is sanitized; external links, images and embeds are shown as text.
+- **`GET /api/document` (`md-api`, `#22`):** Returns an indexed document's original Markdown and its resolved outgoing wikilinks, by `path` or by `title` (case-insensitive; same folder as `from`, then shortest path, then alphabetical). Served from the index only; non-indexed paths return `404`.
+- **Raw Markdown in the index (`#22`):** `md-indexer` stores each note's original Markdown in `documents.markdown`. Existing databases are migrated automatically; unchanged notes without stored Markdown are re-parsed once while keeping their section embeddings.
+
+### Changed
+- **Desktop tests:** `ApiClient` receives its HTTP transport via the `HTTP_FETCH` injection token, so specs stub it through DI instead of module-mocking `@tauri-apps/plugin-http` (which became order-dependent with multiple spec files).
+
 ### Fixed
 - **Desktop app (`#21`):** Submitting a new question now clears the previous answer, its sources and duration immediately, so a stale answer is no longer shown while the next one is generated or after a failed request.
 
