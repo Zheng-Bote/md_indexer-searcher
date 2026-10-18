@@ -14,6 +14,7 @@ import (
 	"github.com/md-indexer/internal/api"
 	"github.com/md-indexer/internal/config"
 	"github.com/md-indexer/internal/embedding"
+	"github.com/md-indexer/internal/netaddr"
 	"github.com/md-indexer/internal/repository"
 	"github.com/md-indexer/internal/service"
 	"github.com/md-indexer/internal/vaultdb"
@@ -28,7 +29,7 @@ func main() {
 	dir := flag.String("dir", ".", "Directory to index")
 	dbPath := flag.String("db", "", "Path to SQLite database (default: <dir>/.md_indexer/md_indexer.db, or the user data dir if the vault is not writable)")
 	port := flag.String("port", "8080", "HTTP server port")
-	host := flag.String("host", "", "HTTP bind address, e.g. 127.0.0.1 (empty listens on all interfaces)")
+	host := flag.String("host", "127.0.0.1", "HTTP bind address; use 0.0.0.0 to listen on all interfaces (no authentication)")
 	embedModel := flag.String("embed-model", "", "Ollama embedding model for vector retrieval, e.g. bge-m3 (empty disables embeddings)")
 	ollamaHost := flag.String("ollama-host", "http://localhost:11434", "Ollama API host URL for embeddings")
 	force := flag.Bool("force", false, "Force re-parsing all Markdown files and purge skipped/deleted entries without dropping unchanged embeddings")
@@ -92,14 +93,17 @@ func main() {
 	defer fsWatcher.Close()
 	go fsWatcher.Start()
 
-	server := api.NewServer(cfg, repo)
+	addr, exposed := netaddr.Listen(*host, cfg.Port)
+	if exposed {
+		log.Warn().Str("addr", addr).Msg("Listening on a non-loopback address: reachable from the network without authentication")
+	}
 	httpServer := &http.Server{
-		Addr:    *host + ":" + cfg.Port,
-		Handler: server.Handler(),
+		Addr:    addr,
+		Handler: api.NewServer().Handler(),
 	}
 
 	go func() {
-		log.Info().Str("port", cfg.Port).Msg("Starting HTTP server")
+		log.Info().Str("addr", addr).Msg("Starting HTTP server")
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatal().Err(err).Msg("HTTP server failed")
 		}

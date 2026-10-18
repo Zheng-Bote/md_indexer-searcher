@@ -158,6 +158,8 @@ docker build -t md-knowledge-system .
 docker run -p 8080:8080 -p 8081:8081 -v /pfad/zum/vault:/app/vault md-knowledge-system
 ```
 
+Inside the container `md-api` runs with `-host 0.0.0.0`, so the published ports work; publish them only to `127.0.0.1` (`-p 127.0.0.1:8081:8081`) unless the API should be reachable from the network.
+
 ## Usage & Examples
 
 ### Database Location
@@ -178,9 +180,8 @@ Indexes a folder recursively and monitors it for future changes.
 ```bash
 ./bin/md-indexer -dir /path/to/obsidian/vault -port 8080
 
-# Compute local section embeddings for vector retrieval (Ollama, e.g. bge-m3)
-# and listen on localhost only:
-./bin/md-indexer -dir /path/to/obsidian/vault -embed-model bge-m3 -host 127.0.0.1
+# Compute local section embeddings for vector retrieval (Ollama, e.g. bge-m3):
+./bin/md-indexer -dir /path/to/obsidian/vault -embed-model bge-m3
 
 # Force re-parsing all notes and purging excluded (_templates_, .obsidian) or deleted paths
 # without dropping existing section_embeddings:
@@ -241,7 +242,7 @@ make api-run
 - `POST /api/ai/ask`: Grounded AI answer (requires `-ai`)
 - `GET /api/ai/models`: Installed Ollama models and the active generation/embedding model (requires `-ai`)
 
-Use `-host 127.0.0.1` to listen on localhost only (`md-indexer` accepts the same flag).
+`md-api` listens on `127.0.0.1` by default and sends no CORS headers, so neither other machines nor web pages in your browser can read the vault through it. Use `-host 0.0.0.0` (or a specific interface address) only if you need network access: there is no authentication, and the server logs a warning. `md-indexer` accepts the same flag; its own HTTP server only answers `/health` (readiness after the initial index), queries go through `md-api`.
 
 *(The exact specification is documented in the included `openapi.yaml` file).*
 
