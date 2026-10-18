@@ -90,6 +90,8 @@ export class AskPanel {
     }
     this.busy.set(true);
     this.error.set(null);
+    this.answer.set(null);
+    this.durationMs.set(null);
     const startedAt = performance.now();
     this.elapsedMs.set(0);
     this.timer = setInterval(() => this.elapsedMs.set(performance.now() - startedAt), 1000);

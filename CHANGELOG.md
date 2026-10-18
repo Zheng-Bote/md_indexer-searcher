@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Desktop app (`#21`):** Submitting a new question now clears the previous answer, its sources and duration immediately, so a stale answer is no longer shown while the next one is generated or after a failed request.
+
 ## [v0.3.0] - 2026-10-17
 
 ### Added
