@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 # Feature Specification: Path-Based Document IDs
 
 **Issue:** [#29](https://github.com/Zheng-Bote/md_indexer-searcher/issues/29)  
-**Status:** Planned (`/speckit.plan`) · Decisions confirmed 2026-10-18
+**Status:** Implemented (`/speckit.implement`) · Decisions confirmed 2026-10-18
 
 ## 1. Feature Intent
 
@@ -72,7 +72,7 @@ Decisions (2026-10-18, issue #29):
 
 - [x] **Architecture:** Layering unchanged (Watcher -> Service -> Parser/Repository).
 - [x] **Architecture:** No client-app change.
-- [ ] **Architecture:** Feature affects architecture: no `md-indexer.sdd` update required.
+- [x] **Architecture:** Feature affects architecture: no `md-indexer.sdd` update required.
 - [x] **Read-Only Vault:** Unchanged.
 - [x] **Security:** Unchanged.
 - [x] **Data Model:** Schema unchanged; ID values change via an in-place migration; the index stays rebuildable and embeddings survive.
@@ -81,10 +81,10 @@ Decisions (2026-10-18, issue #29):
 
 ## 7. Acceptance Criteria
 
-- [ ] Two notes with identical content are both indexed, searchable and openable in the desktop viewer; changing or deleting one does not affect the other.
-- [ ] Repeated headings in one note produce distinct sections.
-- [ ] Rename/move removes the old and adds the new document in both event orders.
-- [ ] A failing statement in `UpsertDocument` / `RemoveDocument` rolls back and is logged.
-- [ ] Migration of an existing index: same number of documents, all embeddings re-keyed, zero sections re-embedded (verified on a copy of the 2,000-note test vault index).
-- [ ] `go test ./...` with regression tests for all of the above.
-- [ ] `CHANGELOG.md` and `README.md` are up-to-date.
+- [x] Two notes with identical content are both indexed, searchable and openable in the desktop viewer; changing or deleting one does not affect the other.
+- [x] Repeated headings in one note produce distinct sections.
+- [x] Rename/move removes the old and adds the new document in both event orders.
+- [x] A failing statement in `UpsertDocument` / `RemoveDocument` rolls back and is logged.
+- [x] Migration of an existing index: same number of documents, all embeddings re-keyed, zero existing sections re-embedded (verified on a copy of the 2,000-note test vault index; only the 275 previously dropped repeated-heading sections were embedded).
+- [x] `go test ./...` with regression tests for all of the above.
+- [x] `CHANGELOG.md` and `README.md` are up-to-date.

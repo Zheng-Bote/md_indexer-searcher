@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -416,5 +417,83 @@ func TestSQLiteRepository_MigratesDocumentsMarkdownColumn(t *testing.T) {
 	}
 	if doc.HasMarkdown {
 		t.Errorf("Expected legacy row without Markdown to report HasMarkdown=false")
+	}
+}
+
+func TestSQLiteRepository_RekeyEmbeddings(t *testing.T) {
+	repo, err := NewSQLiteRepository(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repo.Close()
+	ctx := context.Background()
+	for _, id := range []string{"old-overview", "old-Setup#2", "older-Setup", "x-old-Setup"} {
+		if _, err := repo.GetDB().Exec(`INSERT INTO section_embeddings (section_id, embedding, dimensions, model, content_hash, created_at)
+			VALUES (?, X'00', 1, 'bge-m3', 'h', CURRENT_TIMESTAMP)`, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	n, err := repo.RekeyEmbeddings(ctx, "old", "new")
+	if err != nil || n != 2 {
+		t.Fatalf("RekeyEmbeddings: n=%d err=%v", n, err)
+	}
+	rows, err := repo.GetDB().Query(`SELECT section_id FROM section_embeddings ORDER BY section_id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var got []string
+	for rows.Next() {
+		var id string
+		rows.Scan(&id)
+		got = append(got, id)
+	}
+	want := []string{"new-Setup#2", "new-overview", "older-Setup", "x-old-Setup"}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestSQLiteRepository_UpsertAndRemoveRollBackOnFailure(t *testing.T) {
+	repo, err := NewSQLiteRepository(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer repo.Close()
+	ctx := context.Background()
+	doc := &entities.Document{ID: "d1", Path: "/vault/A.md", Title: "A", Hash: "h1",
+		Sections: []entities.Section{{ID: "d1-overview", Heading: "Overview", Content: "original"}}}
+	if err := repo.UpsertDocument(ctx, doc); err != nil {
+		t.Fatalf("initial upsert: %v", err)
+	}
+
+	// Any failing statement must abort the whole upsert and keep the previous state.
+	if _, err := repo.GetDB().Exec(`CREATE TRIGGER fail_metadata BEFORE INSERT ON metadata BEGIN SELECT RAISE(ABORT, 'boom'); END`); err != nil {
+		t.Fatal(err)
+	}
+	changed := *doc
+	changed.Hash = "h2"
+	changed.Metadata = map[string]interface{}{"status": "draft"}
+	changed.Sections = []entities.Section{{ID: "d1-overview", Heading: "Overview", Content: "changed"}}
+	if err := repo.UpsertDocument(ctx, &changed); err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("expected upsert error, got %v", err)
+	}
+	var hash, content string
+	if err := repo.GetDB().QueryRow(`SELECT d.hash, s.content FROM documents d JOIN sections s ON s.document_id = d.id WHERE d.path = ?`, doc.Path).Scan(&hash, &content); err != nil {
+		t.Fatalf("previous state lost: %v", err)
+	}
+	if hash != "h1" || content != "original" {
+		t.Errorf("expected rollback to h1/original, got %s/%s", hash, content)
+	}
+
+	if _, err := repo.GetDB().Exec(`CREATE TRIGGER fail_delete BEFORE DELETE ON sections BEGIN SELECT RAISE(ABORT, 'boom'); END`); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.RemoveDocument(ctx, doc.Path); err == nil {
+		t.Fatal("expected remove error")
+	}
+	if d, _ := repo.GetDocumentByPath(ctx, doc.Path); d == nil {
+		t.Error("document must survive a failed remove")
 	}
 }

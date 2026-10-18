@@ -4,6 +4,8 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strings"
@@ -126,26 +128,62 @@ func (s *IndexerService) embedPending(ctx context.Context) {
 	}
 }
 
+// DocumentID returns the hex SHA-256 of path relative to the vault root, with "/" separators,
+// so every file gets its own stable ID regardless of its content.
+func DocumentID(root, path string) (string, error) {
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	rel, err := filepath.Rel(absRoot, absPath)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256([]byte(filepath.ToSlash(rel)))
+	return hex.EncodeToString(sum[:]), nil
+}
+
 func (s *IndexerService) indexFile(ctx context.Context, path string) error {
 	existingDoc, err := s.repo.GetDocumentByPath(ctx, path)
 	if err != nil {
 		return err
 	}
 
-	doc, err := s.parser.ParseFile(path)
+	id, err := DocumentID(s.dir, path)
+	if err != nil {
+		return err
+	}
+	doc, err := s.parser.ParseFile(path, id)
 	if err != nil {
 		log.Error().Err(err).Str("path", path).Msg("Failed to parse file")
 		return err
 	}
 
-	// Skip if unchanged unless force mode is enabled or the row predates raw Markdown storage
-	if !s.force && existingDoc != nil && existingDoc.Hash == doc.Hash && existingDoc.HasMarkdown {
+	// Skip if unchanged unless force mode is enabled or the row predates raw Markdown storage or path-based IDs
+	if !s.force && existingDoc != nil && existingDoc.ID == doc.ID && existingDoc.Hash == doc.Hash && existingDoc.HasMarkdown {
 		log.Debug().Str("path", path).Msg("File unchanged, skipping")
 		return nil
 	}
 
+	// Rows from before path-based IDs carry a content-hash ID; move their embeddings to the new ID
+	// so EmbedPending finds them unchanged instead of re-embedding the sections.
+	if existingDoc != nil && existingDoc.ID != doc.ID {
+		if _, err := s.repo.RekeyEmbeddings(ctx, existingDoc.ID, doc.ID); err != nil {
+			log.Error().Err(err).Str("path", path).Msg("Failed to re-key section embeddings")
+			return nil
+		}
+	}
+
 	log.Info().Str("path", path).Msg("Indexing file")
-	return s.repo.UpsertDocument(ctx, doc)
+	// A failed upsert is rolled back and logged; the other files are still indexed.
+	if err := s.repo.UpsertDocument(ctx, doc); err != nil {
+		log.Error().Err(err).Str("path", path).Msg("Failed to index file")
+	}
+	return nil
 }
 
 func (s *IndexerService) RemoveFile(ctx context.Context, path string) error {

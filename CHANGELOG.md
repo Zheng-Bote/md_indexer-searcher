@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Duplicate notes and repeated headings (`#29`):** Document IDs are now derived from the vault-relative path instead of the content hash, so notes with identical content (e.g. untouched notes from the same template) are all indexed and no longer overwrite or delete each other; renames and moves work in any watcher event order. A heading that occurs more than once in a note now gets its own section (`#2`, `#3`, …) instead of being dropped. `UpsertDocument` / `RemoveDocument` roll back on any failing statement and the indexer logs the file instead of committing a partial document. Existing indexes are migrated on the next `md-indexer` run; section embeddings are re-keyed, so only previously dropped sections are embedded (test vault: 3,980 embeddings kept, 275 new).
+
 ### Changed
 - **Vault-local index database (`#23`):** The index now lives in `<vault>/.md_indexer/md_indexer.db` by default for all tools and the desktop app, with a `.gitignore` (`*`) in that folder. If the vault is not writable, `md-indexer` falls back to `<user data dir>/md-indexer/vaults/<hash>.db`. `md-api -vault`, `md-search --vault` and `md-ai --vault` (default: current directory) find the existing database and fail with a clear message instead of creating an empty one. The desktop app passes only the vault; its previous databases are moved into the vault once via the new `md-indexer -migrate-from` flag, embeddings included.
 - **Breaking (CLI defaults):** `-db` / `--db` no longer default to `index.db` (`md-indexer`, `md-api`, `md-search`) or `knowledge.db` (`md-ai`). Existing databases are not migrated automatically; pass `-db index.db` to keep using one, or re-index. `md-ai.example.yaml` no longer sets `db_path`.
