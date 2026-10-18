@@ -240,7 +240,7 @@ Daraus folgt: Der im Deployment beschriebene Laptop-Online-Modus über WireGuard
 - **Option B:** mTLS zwischen Laptop und Desktop.
 - **In jedem Fall:** `md-indexer.sdd` wird im selben Change aktualisiert (Loopback-Regel, Authentifizierungspflicht für nicht-loopback-Bindings). Laut `.specdd/bootstrap.project.md` ist eine Architekturänderung ohne Spec-Update unzulässig.
 
-## 4.4 Lokale Angriffsfläche von `md-api` und `md-indexer` `[Blocker]`
+## 4.4 Lokale Angriffsfläche von `md-api` und `md-indexer` `[Blocker]` (Issue [#31](https://github.com/Zheng-Bote/md_indexer-searcher/issues/31))
 
 Unabhängig vom Remote-Szenario gilt schon heute:
 
@@ -693,7 +693,7 @@ Zusätzlich: ein Log-Eintrag pro Anfrage mit Provider, Modus, Plan, Token-Zahlen
 **Blocker (vor jeder Umsetzung zu klären):**
 
 1. `.env`-Loader mit Präzedenz und Dateirechten (4.1). Die `.gitignore`-Regel ist erledigt.
-2. Lokale Angriffsfläche (4.4): Bind-Default `127.0.0.1` für `md-api`/`md-indexer` und CORS `*` entfernen bzw. auf eine Allowlist beschränken.
+2. Lokale Angriffsfläche (4.4, #31): Bind-Default `127.0.0.1` für `md-api`/`md-indexer` und CORS `*` entfernen bzw. auf eine Allowlist beschränken.
 3. Authentifizierung für remote `md-api`: Bearer-Token oder mTLS, plus Spec-Update in `md-indexer.sdd` (4.3).
 
 **Offene Designentscheidungen:**
