@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 # Feature Specification: Inline Markdown Document Viewer (Desktop)
 
 **Issue:** [#22](https://github.com/Zheng-Bote/md_indexer-searcher/issues/22)  
-**Status:** Specified (`/speckit.specify`)
+**Status:** Planned (`/speckit.plan`) · Decisions confirmed 2026-10-18
 
 ## 1. Feature Intent
 
