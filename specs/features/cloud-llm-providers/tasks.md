@@ -56,5 +56,7 @@ SPDX-License-Identifier: Apache-2.0
 ### Task 6: Verification
 - [x] `go vet ./...`, `go test ./...`, `ng test`, `ng build`, `cargo test`, `cargo clippy`.
 - [x] Manual `md-api` run on the sample vault (`examples/vault`) with a test `.env` (invalid keys): model list classified (local/cloud, generation/embedding, parameter size), `none`/`GROQ` ignored, permission warning, no key in `ps`/logs/responses; real endpoints of OpenRouter, Claude and Gemini return `auth` (502); unknown model 400; local `qwen3:14b` answer via `model` with `provider`/`locality`.
-- [ ] Manual question per provider with valid keys (user's `.env`) and GUI run of the desktop app.
+- [x] Manual question per provider with valid keys (user's `.env`, sample vault, 2026-10-18): Ollama Cloud `gpt-oss:120b` 1.7 s, Gemini `gemini-3.8-flash` 47 s, OpenRouter `liquid/lfm-2.5-2.6b:free` 2.0 s, NVIDIA `meta/llama-3.2-90b-vision-instruct` 19 s — all `locality: cloud` with sources. Outdated example IDs (OpenRouter `deepseek/deepseek-r1:free`, NVIDIA `meta/llama-3.3-70b-instruct`) were reported as `unavailable` with the provider's message; the free reasoning model `nvidia/nemotron-3.5-lightning:free` exceeded the 180 s cloud timeout.
+- [ ] Claude with a valid key (no key available).
+- [ ] GUI run of the desktop app.
 - [x] Set spec status to Implemented.

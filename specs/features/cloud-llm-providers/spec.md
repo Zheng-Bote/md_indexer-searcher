@@ -129,7 +129,8 @@ Local CPU generation takes minutes (2026-10-18 benchmark: `qwen3:14b` ≈ 2 min 
 - [x] Ollama cloud models of the local daemon are listed as cloud models.
 - [x] Providers with missing, empty or `none` keys are not offered; `GROQ_*` entries are ignored.
 - [x] Questions are answered by Ollama Cloud, OpenRouter, NVIDIA NIM, Claude and Gemini models (mocked in tests; real endpoints verified for authentication handling).
-- [ ] One manual question per provider with valid keys (pending: user's `.env`).
+- [x] One manual question per provider with valid keys: Ollama Cloud, OpenRouter, NVIDIA NIM, Gemini verified 2026-10-18.
+- [ ] Claude with a valid key (no key available yet).
 - [x] Claude refusals, 401 and 429 produce specific messages; no fallback to another provider or local model.
 - [x] Keys do not appear in process arguments (`ps`), logs, API responses or `settings.json`.
 - [x] Consent notice appears once per app session before the first cloud question; cloud answers carry the badge and `provider`/`locality`.
