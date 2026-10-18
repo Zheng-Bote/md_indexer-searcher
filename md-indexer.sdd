@@ -1,27 +1,35 @@
 # SpecDD: Markdown Knowledge Indexer (md-indexer)
 
 ## 1. System Intent
-The `md-indexer` system acts as a local knowledge graph and search engine for Markdown-based note systems (like Obsidian).
-It maintains a strict one-way flow of information: Markdown files are the single Source of Truth. The SQLite database is a disposable, materialized index.
+The `md-indexer` system acts as a local knowledge graph, search engine and grounded AI assistant for Markdown-based note systems (like Obsidian).
+It maintains a strict one-way flow of information: Markdown files are the single Source of Truth. The SQLite database is a disposable, materialized index that can always be rebuilt from the vault.
 
 ## 2. Architecture & Layering
-*   **FS Layer (Watcher):** Monitors the filesystem for changes. Never writes to markdown files.
-*   **Parser & Extractor Layer:** Parses Markdown to AST (`goldmark`), extracts Frontmatter, Links, Tags.
-*   **Repository Layer:** Manages the SQLite database and FTS5 search index.
-*   **Search / Graph Engine Layer:** Provides complex query capabilities (BFS, graph traversal) exclusively via the SQLite database.
-*   **API / CLI Layer:** Provides interfaces to the system (`md-search` and `md-api`).
-*   **Client Apps (`apps/`):** Non-Go clients (e.g. `apps/desktop`, Tauri + Angular). They consume the system exclusively via `md-api` over HTTP and may run the Go binaries as local processes.
+*   **FS Layer (Watcher):** Monitors the filesystem for changes (`internal/watcher`). Never writes to markdown files.
+*   **Parser & Extractor Layer:** Parses Markdown to AST (`goldmark`), extracts Frontmatter, Sections, Links, Tags and Entities (`internal/parser`, `internal/service`).
+*   **Repository Layer:** Manages the SQLite database, FTS5 search index and section embeddings (`internal/repository`, `internal/embedding`).
+*   **Search / Graph Engine Layer:** Provides complex query capabilities (FTS, BFS, graph traversal, impact analysis) exclusively via the SQLite database (`internal/search`, `internal/graph`).
+*   **AI Layer (`internal/ai`):** Grounded question answering over the index: classification, query planning, hybrid retrieval (FTS + graph + entities + vectors), context building with secret redaction, prompt templating, citations and knowledge gaps. LLM and embedding backends are accessed only through provider interfaces (`internal/ai/provider`, `internal/embedding`).
+*   **API / CLI Layer:** Provides interfaces to the system: `md-indexer` (`cmd/indexer`), `md-search`, `md-api` and `md-ai`.
+*   **Client Apps (`apps/`):** Non-Go clients (e.g. `apps/desktop`, Tauri + Angular). They consume the system exclusively via `md-api` over HTTP and may run the Go binaries as local sidecar processes.
 
 ## 3. Strict Rules (Must / Must Not / Forbids)
 *   **MUST** treat markdown files as immutable (Read-Only). No bidirectional sync.
+*   **MUST** keep the SQLite index rebuildable from the vault; re-indexing MUST NOT drop valid section embeddings.
 *   **MUST** use Clean Architecture and Dependency Injection.
 *   **MUST NOT** use CGO dependencies (e.g., `modernc.org/sqlite` must be used).
-*   **MUST NOT** bypass the Search/Graph Engine layer to access the database directly from API handlers.
+*   **MUST NOT** bypass the Search/Graph Engine or AI layer to access the database directly from API handlers.
+*   **MUST** keep the AI layer read-only on the database; only the Indexer/Repository layer writes to SQLite.
+*   **MUST** apply secret redaction (`internal/ai/contextbuilder`) to all vault content before it is passed to an LLM provider.
+*   **MUST** access LLM and embedding backends only through provider interfaces; provider-specific protocol code (HTTP requests, authentication, response parsing) lives only in `internal/ai/provider` and `internal/embedding`.
+*   **MUST NOT** pass secrets (API keys, tokens) via command-line arguments, write them to logs, or return them in API responses.
 *   **FORBIDS** the use of global variables for state management.
 *   **FORBIDS** writing any code that violates the standard Go project layout (`cmd/`, `internal/`).
 *   **MUST NOT** access the SQLite database or the vault's Markdown files directly from client apps under `apps/`.
+*   **MUST** bind sidecar processes started by client apps to the loopback interface (`127.0.0.1`).
 
 ## 4. Code Standards
 *   **Language:** All code documentation and comments must be in English.
 *   **Licensing:** All source code files must include an SPDX header (Apache-2.0).
-*   **Modularity:** `md-indexer`, `md-search`, and `md-api` are distinct binaries but share the `internal` core.
+*   **Modularity:** `md-indexer`, `md-search`, `md-api` and `md-ai` are distinct binaries but share the `internal` core within a single Go module.
+*   **Testing:** New behaviour is covered by unit tests (`go test ./...`; for `apps/desktop` additionally `npm test` and `cargo test`).
