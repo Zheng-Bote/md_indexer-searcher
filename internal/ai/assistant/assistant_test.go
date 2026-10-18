@@ -6,6 +6,7 @@ package assistant
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -175,5 +176,63 @@ func TestAssistant_RetrieveOnlyAndAskStream(t *testing.T) {
 	}
 	if streamed.String() != streamAns.Answer {
 		t.Errorf("expected streamed tokens to match Answer, got %q vs %q", streamed.String(), streamAns.Answer)
+	}
+}
+
+type stubResolver map[string]struct {
+	p        provider.LLMProvider
+	locality string
+}
+
+func (s stubResolver) Resolve(ref model.ModelRef) (provider.LLMProvider, string, error) {
+	e, ok := s[ref.Provider+"/"+ref.Name]
+	if !ok {
+		return nil, "", &provider.ErrUnknownModel{Ref: ref}
+	}
+	return e.p, e.locality, nil
+}
+
+func TestAssistant_AskModelRoutesWithBudgets(t *testing.T) {
+	db := setupAssistantTestDB(t)
+	cfg := config.DefaultConfig()
+	cfg.DBPath = "x.db"
+	cfg.MaxTokens, cfg.CloudMaxTokens = 2048, 16000
+
+	local := provider.NewMockProvider("lokal")
+	cloud := provider.NewMockProvider("cloud")
+	failing := &provider.MockProvider{ResponseFunc: func(ctx context.Context, req *model.GenerateRequest) (*model.GenerateResponse, error) {
+		return nil, &provider.Error{Provider: "openrouter", Kind: provider.ErrKindRateLimit, Status: 429}
+	}}
+	asst := NewAssistant(cfg, classifier.NewRuleClassifier(), NewRetriever(db, cfg), contextbuilder.NewContextBuilder(cfg.MaxContextTokens), local).
+		WithModels(stubResolver{
+			"claude/claude-opus-5-5":    {cloud, model.LocalityCloud},
+			"openrouter/x:free":         {failing, model.LocalityCloud},
+			"ollama/gpt-oss:120b-cloud": {local, model.LocalityCloud},
+		}, contextbuilder.NewContextBuilder(cfg.CloudMaxContextTokens))
+	ctx := context.Background()
+
+	ans, err := asst.AskModel(ctx, "Was ist PaymentService?", nil, &model.ModelRef{Provider: "claude", Name: "claude-opus-5-5"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ans.Answer != "cloud" || ans.Locality != model.LocalityCloud || ans.Provider != "mock" || cloud.Calls[0].MaxTokens != 16000 || cloud.Calls[0].Model != "claude-opus-5-5" {
+		t.Errorf("cloud routing: answer %+v, request %+v", ans, cloud.Calls[0])
+	}
+
+	ans, err = asst.AskModel(ctx, "Was ist PaymentService?", nil, nil)
+	if err != nil || ans.Answer != "lokal" || ans.Locality != model.LocalityLocal || local.Calls[0].MaxTokens != 2048 || local.Calls[0].Model != cfg.Model {
+		t.Errorf("default routing: %+v %v", ans, err)
+	}
+
+	// A failing cloud provider surfaces its typed error; nothing falls back to another provider.
+	_, err = asst.AskModel(ctx, "Was ist PaymentService?", nil, &model.ModelRef{Provider: "openrouter", Name: "x:free"})
+	var perr *provider.Error
+	if !errors.As(err, &perr) || perr.Kind != provider.ErrKindRateLimit || len(local.Calls) != 1 || len(cloud.Calls) != 1 {
+		t.Errorf("expected rate limit without fallback, got %v (local calls %d, cloud calls %d)", err, len(local.Calls), len(cloud.Calls))
+	}
+
+	var unknown *provider.ErrUnknownModel
+	if _, err := asst.AskModel(ctx, "q", nil, &model.ModelRef{Provider: "groq", Name: "llama"}); !errors.As(err, &unknown) {
+		t.Errorf("expected unknown model error, got %v", err)
 	}
 }

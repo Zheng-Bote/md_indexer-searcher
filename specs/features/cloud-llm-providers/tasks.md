@@ -15,7 +15,7 @@ SPDX-License-Identifier: Apache-2.0
 - [x] No size filter for local models; size label + sort; filter only embedding/generation/cloud mismatches (2026-10-18).
 - [x] Claude effort fixed in configuration, default `medium` (2026-10-18).
 - [x] Per-request routing with a provider registry in `md-api`; answer-model changes no longer restart the sidecars (plan, 2026-10-18).
-- [ ] Claude server-side refusal fallback (`fallbacks: "default"`) enabled with the answering model reported — confirm or decline.
+- [x] Claude server-side refusal fallback (`fallbacks: "default"`) enabled; the answering model is reported (confirmed 2026-10-18).
 
 ## Package & Implementation Tasks
 

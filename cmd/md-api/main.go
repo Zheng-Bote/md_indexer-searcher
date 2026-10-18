@@ -44,6 +44,7 @@ func main() {
 	embeddingModel := flag.String("embedding-model", aiCfg.EmbeddingModel, "Ollama embedding model for AI retrieval")
 	maxContextTokens := flag.Int("max-context-tokens", aiCfg.MaxContextTokens, "Max context token budget for AI endpoint")
 	timeoutSec := flag.Int("timeout", aiCfg.TimeoutSeconds, "LLM request timeout in seconds")
+	envFile := flag.String("env-file", aiCfg.EnvFile, "Path to md_indexer's .env with cloud provider keys (default: MD_AI_ENV_FILE or ~/.config/md-indexer/.env)")
 	flag.Parse()
 
 	if *dbPath == "" {
@@ -78,6 +79,7 @@ func main() {
 		aiCfg.EmbeddingModel = *embeddingModel
 		aiCfg.MaxContextTokens = *maxContextTokens
 		aiCfg.TimeoutSeconds = *timeoutSec
+		aiCfg.EnvFile = *envFile
 		if err := aiCfg.Validate(); err != nil {
 			log.Fatal().Err(err).Msg("Invalid AI configuration")
 		}
@@ -86,12 +88,17 @@ func main() {
 		ret := assistant.NewRetriever(repo.GetDB(), aiCfg)
 		cb := contextbuilder.NewContextBuilder(aiCfg.MaxContextTokens)
 		prov := provider.NewOllamaProvider(aiCfg.OllamaHost, &http.Client{Timeout: aiCfg.Timeout()})
-		asst := assistant.NewAssistant(aiCfg, clf, ret, cb, prov)
+		registry, err := newRegistry(aiCfg, prov)
+		if err != nil {
+			log.Fatal().Err(err).Msg("Failed to load cloud provider configuration")
+		}
+		asst := assistant.NewAssistant(aiCfg, clf, ret, cb, prov).
+			WithModels(registry, contextbuilder.NewContextBuilder(aiCfg.CloudMaxContextTokens))
 		active := rest.ActiveModels{Model: aiCfg.Model}
 		if aiCfg.EnableVectors {
 			active.EmbeddingModel = aiCfg.EmbeddingModel
 		}
-		server.WithAssistant(asst).WithModelLister(prov, active)
+		server.WithAssistant(asst).WithModelLister(registry, active)
 		log.Info().Str("model", aiCfg.Model).Str("retriever", aiCfg.Retriever).Msg("AI Assistant endpoint /api/ai/ask enabled")
 	}
 
@@ -128,4 +135,21 @@ func resolveDB(vault string) (string, error) {
 		return "", err
 	}
 	return vaultdb.ForReader(vault, dataDir)
+}
+
+// newRegistry loads the .env file and registers the enabled cloud providers next to the local Ollama daemon.
+// Only provider names and model counts are logged, never keys.
+func newRegistry(cfg *config.Config, local *provider.OllamaProvider) (*provider.Registry, error) {
+	envFile, err := config.LoadEnvFile(cfg.EnvFile)
+	if err != nil {
+		return nil, err
+	}
+	if envFile.Insecure {
+		log.Warn().Str("file", envFile.Path).Msg("The .env file is readable by other users; restrict it with chmod 600")
+	}
+	registry := provider.NewRegistry(local, envFile.Providers(), cfg.CloudTimeout(), cfg.EffortFor)
+	for id, models := range registry.Providers() {
+		log.Info().Str("provider", id).Int("models", models).Msg("Cloud provider enabled")
+	}
+	return registry, nil
 }

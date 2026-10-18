@@ -43,6 +43,11 @@ func NewRetriever(db *sql.DB, cfg *config.Config) Retriever {
 	return hybrid.NewSQLiteRetriever(db, cfg.GraphDepth, vectors, weights, cfg.TopKFTS, cfg.TopKVector)
 }
 
+// ModelResolver maps a model reference to the provider serving it and the model's locality.
+type ModelResolver interface {
+	Resolve(ref model.ModelRef) (provider.LLMProvider, string, error)
+}
+
 // Assistant orchestrates all AI subcomponents into a coherent Q&A pipeline.
 type Assistant struct {
 	cfg            *config.Config
@@ -50,6 +55,10 @@ type Assistant struct {
 	retriever      Retriever
 	contextBuilder *contextbuilder.ContextBuilder
 	provider       provider.LLMProvider
+	// models and cloudContext are set by WithModels to answer with per-request models.
+	models       ModelResolver
+	cloudContext *contextbuilder.ContextBuilder
+	defaultRef   *model.ModelRef
 }
 
 // NewAssistant creates a new Assistant instance.
@@ -69,9 +78,27 @@ func NewAssistant(
 	}
 }
 
+// WithModels enables per-request model selection; cloudContext budgets the context for cloud models.
+func (a *Assistant) WithModels(r ModelResolver, cloudContext *contextbuilder.ContextBuilder) *Assistant {
+	a.models = r
+	a.cloudContext = cloudContext
+	return a
+}
+
+// WithDefaultModel answers requests without an explicit model with ref (e.g. md-ai --provider claude).
+func (a *Assistant) WithDefaultModel(ref model.ModelRef) *Assistant {
+	a.defaultRef = &ref
+	return a
+}
+
 // Ask processes a single question and returns the grounded answer.
 func (a *Assistant) Ask(ctx context.Context, question string, session *conversation.Session) (*model.Answer, error) {
 	return a.AskStream(ctx, question, session, nil, nil)
+}
+
+// AskModel answers with the referenced model; nil uses the configured default model.
+func (a *Assistant) AskModel(ctx context.Context, question string, session *conversation.Session, ref *model.ModelRef) (*model.Answer, error) {
+	return a.ask(ctx, question, session, ref, nil, nil)
 }
 
 // AskStream processes a single question, optionally reporting retrieval plan telemetry via onPlan
@@ -83,6 +110,55 @@ func (a *Assistant) AskStream(
 	onPlan func(plan *model.RetrievalPlanInfo, blocks int),
 	onToken func(token string),
 ) (*model.Answer, error) {
+	return a.ask(ctx, question, session, nil, onPlan, onToken)
+}
+
+// target describes which provider answers and with which budgets.
+type target struct {
+	provider  provider.LLMProvider
+	model     string
+	locality  string
+	builder   *contextbuilder.ContextBuilder
+	maxTokens int
+}
+
+// resolve picks the provider for ref. Cloud models get the cloud context and output budgets;
+// errors never fall back to another provider.
+func (a *Assistant) resolve(ref *model.ModelRef) (target, error) {
+	local := target{provider: a.provider, model: a.cfg.Model, locality: model.LocalityLocal, builder: a.contextBuilder, maxTokens: a.cfg.MaxTokens}
+	if ref == nil {
+		ref = a.defaultRef
+	}
+	if ref == nil || a.models == nil {
+		if ref != nil {
+			return target{}, fmt.Errorf("model selection is not configured")
+		}
+		return local, nil
+	}
+	p, locality, err := a.models.Resolve(*ref)
+	if err != nil {
+		return target{}, err
+	}
+	t := target{provider: p, model: ref.Name, locality: locality, builder: a.contextBuilder, maxTokens: a.cfg.MaxTokens}
+	if locality == model.LocalityCloud && a.cloudContext != nil {
+		t.builder, t.maxTokens = a.cloudContext, a.cfg.CloudMaxTokens
+	}
+	return t, nil
+}
+
+func (a *Assistant) ask(
+	ctx context.Context,
+	question string,
+	session *conversation.Session,
+	ref *model.ModelRef,
+	onPlan func(plan *model.RetrievalPlanInfo, blocks int),
+	onToken func(token string),
+) (*model.Answer, error) {
+	tgt, err := a.resolve(ref)
+	if err != nil {
+		return nil, err
+	}
+
 	// 1. Classify intent
 	intent := a.classifier.Classify(question)
 
@@ -93,8 +169,8 @@ func (a *Assistant) AskStream(
 	}
 
 	// 3. Build prioritized context
-	blocks := a.contextBuilder.BuildContext(retrievalRes)
-	formattedContext := a.contextBuilder.FormatContext(blocks)
+	blocks := tgt.builder.BuildContext(retrievalRes)
+	formattedContext := tgt.builder.FormatContext(blocks)
 	if onPlan != nil {
 		onPlan(retrievalRes.Plan, len(blocks))
 	}
@@ -113,26 +189,26 @@ func (a *Assistant) AskStream(
 
 	// 6. Generate answer via LLM Provider
 	req := &model.GenerateRequest{
-		Model:         a.cfg.Model,
+		Model:         tgt.model,
 		Prompt:        userPrompt,
 		System:        sysPrompt,
 		Temperature:   a.cfg.Temperature,
-		MaxTokens:     a.cfg.MaxTokens,
-		ContextWindow: contextWindow(sysPrompt, userPrompt, a.cfg.MaxTokens),
+		MaxTokens:     tgt.maxTokens,
+		ContextWindow: contextWindow(sysPrompt, userPrompt, tgt.maxTokens),
 	}
 
 	var genResp *model.GenerateResponse
 	if onToken != nil {
-		if sp, ok := a.provider.(provider.StreamingLLMProvider); ok {
+		if sp, ok := tgt.provider.(provider.StreamingLLMProvider); ok {
 			genResp, err = sp.GenerateStream(ctx, req, onToken)
 		} else {
-			genResp, err = a.provider.Generate(ctx, req)
+			genResp, err = tgt.provider.Generate(ctx, req)
 			if err == nil && genResp.Response != "" {
 				onToken(genResp.Response)
 			}
 		}
 	} else {
-		genResp, err = a.provider.Generate(ctx, req)
+		genResp, err = tgt.provider.Generate(ctx, req)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("llm generation failed: %w", err)
@@ -148,6 +224,8 @@ func (a *Assistant) AskStream(
 		Intent:   intent,
 		Plan:     retrievalRes.Plan,
 		Model:    genResp.Model,
+		Provider: tgt.provider.Name(),
+		Locality: tgt.locality,
 		Sources:  cites,
 		Gaps:     detectedGaps,
 	}

@@ -318,3 +318,57 @@ func TestRESTServer_SendsNoCORSHeaders(t *testing.T) {
 		}
 	}
 }
+
+type restResolver map[string]provider.LLMProvider
+
+func (r restResolver) Resolve(ref model.ModelRef) (provider.LLMProvider, string, error) {
+	if p, ok := r[ref.Provider+"/"+ref.Name]; ok {
+		return p, model.LocalityCloud, nil
+	}
+	return nil, "", &provider.ErrUnknownModel{Ref: ref}
+}
+
+func TestRESTServer_AskWithModel(t *testing.T) {
+	repo, _ := setupTestServer(t)
+	defer repo.Close()
+	cfg := config.DefaultConfig()
+	limited := &provider.MockProvider{ResponseFunc: func(ctx context.Context, req *model.GenerateRequest) (*model.GenerateResponse, error) {
+		return nil, &provider.Error{Provider: "openrouter", Kind: provider.ErrKindRateLimit, Status: 429, Detail: "slow down"}
+	}}
+	asst := assistant.NewAssistant(cfg, classifier.NewRuleClassifier(), retriever.NewRetriever(repo.GetDB(), 3), contextbuilder.NewContextBuilder(1000), provider.NewMockProvider("lokal")).
+		WithModels(restResolver{
+			"claude/claude-opus-5-5": provider.NewMockProvider("cloud answer"),
+			"openrouter/x:free":      limited,
+		}, contextbuilder.NewContextBuilder(4000))
+	handler := NewServer(search.NewSearchEngine(repo)).WithAssistant(asst).Handler()
+
+	tests := []struct {
+		name, body, wantKind string
+		wantStatus           int
+	}{
+		{"cloud model", `{"question":"Was ist PaymentService?","model":{"provider":"claude","name":"claude-opus-5-5"}}`, "", http.StatusOK},
+		{"unknown model", `{"question":"q","model":{"provider":"groq","name":"llama"}}`, "", http.StatusBadRequest},
+		{"rate limit", `{"question":"q","model":{"provider":"openrouter","name":"x:free"}}`, provider.ErrKindRateLimit, http.StatusBadGateway},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/ai/ask", strings.NewReader(tc.body)))
+			if rec.Code != tc.wantStatus {
+				t.Fatalf("status %d, want %d: %s", rec.Code, tc.wantStatus, rec.Body.String())
+			}
+			var body struct {
+				Success   bool         `json:"success"`
+				Data      model.Answer `json:"data"`
+				ErrorKind string       `json:"error_kind"`
+			}
+			json.Unmarshal(rec.Body.Bytes(), &body)
+			if body.ErrorKind != tc.wantKind {
+				t.Errorf("error_kind %q, want %q", body.ErrorKind, tc.wantKind)
+			}
+			if tc.wantStatus == http.StatusOK && (body.Data.Answer != "cloud answer" || body.Data.Locality != model.LocalityCloud) {
+				t.Errorf("unexpected answer %+v", body.Data)
+			}
+		})
+	}
+}

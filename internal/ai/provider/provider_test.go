@@ -6,6 +6,7 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -171,7 +172,7 @@ func TestOllamaProvider_ListModels(t *testing.T) {
 		if r.Method != http.MethodGet || r.URL.Path != "/api/tags" {
 			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
-		w.Write([]byte(`{"models":[{"name":"qwen3:14b","size":9300000000,"details":{"family":"qwen3"}},{"name":"bge-m3:latest","size":1200000000,"details":{"family":"bert"}}]}`))
+		w.Write([]byte(`{"models":[{"name":"qwen3:14b","size":9300000000,"details":{"family":"qwen3","parameter_size":"14.8B"}},{"name":"bge-m3:latest","size":1200000000,"details":{"family":"bert","families":["bert"],"parameter_size":"566.70M"}},{"name":"gemma4:cloud","size":0,"details":{"family":"gemma4"}},{"name":"gpt-oss:120b-cloud","size":0,"details":{"family":"gptoss"}}]}`))
 	}))
 	defer srv.Close()
 
@@ -180,9 +181,16 @@ func TestOllamaProvider_ListModels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	base := model.ModelInfo{Provider: "ollama", ProviderName: "Ollama"}
+	with := func(m model.ModelInfo) model.ModelInfo {
+		m.Provider, m.ProviderName = base.Provider, base.ProviderName
+		return m
+	}
 	want := []model.ModelInfo{
-		{Name: "qwen3:14b", Size: 9300000000, Family: "qwen3"},
-		{Name: "bge-m3:latest", Size: 1200000000, Family: "bert"},
+		with(model.ModelInfo{Name: "qwen3:14b", Size: 9300000000, Family: "qwen3", Kind: model.KindGeneration, Locality: model.LocalityLocal, ParameterSize: "14.8B"}),
+		with(model.ModelInfo{Name: "bge-m3:latest", Size: 1200000000, Family: "bert", Kind: model.KindEmbedding, Locality: model.LocalityLocal, ParameterSize: "566.70M"}),
+		with(model.ModelInfo{Name: "gemma4:cloud", Family: "gemma4", Kind: model.KindGeneration, Locality: model.LocalityCloud}),
+		with(model.ModelInfo{Name: "gpt-oss:120b-cloud", Family: "gptoss", Kind: model.KindGeneration, Locality: model.LocalityCloud}),
 	}
 	if len(models) != len(want) {
 		t.Fatalf("expected %d models, got %d", len(want), len(models))
@@ -202,5 +210,49 @@ func TestOllamaProvider_ListModelsUnreachable(t *testing.T) {
 	p := NewOllamaProvider(url, &http.Client{Timeout: time.Second})
 	if _, err := p.ListModels(context.Background()); err == nil {
 		t.Fatal("expected error for unreachable ollama host")
+	}
+}
+
+func TestOllamaProvider_CloudChatWithBearer(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/chat" {
+			t.Errorf("expected /api/chat, got %s", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer cloud-key" {
+			t.Errorf("unexpected Authorization header %q", got)
+		}
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		msgs, _ := body["messages"].([]any)
+		if len(msgs) != 2 || msgs[0].(map[string]any)["role"] != "system" {
+			t.Errorf("expected system + user messages, got %v", body["messages"])
+		}
+		w.Write([]byte(`{"message":{"role":"assistant","content":"Hallo "},"done":false}` + "\n" +
+			`{"message":{"role":"assistant","content":"Welt"},"done":true,"model":"gemma4:31b","prompt_eval_count":12,"eval_count":3}` + "\n"))
+	}))
+	defer srv.Close()
+
+	p := NewOllamaProvider(srv.URL+"/api/chat", nil, WithOllamaCloud("ollama-cloud", "cloud-key"))
+	var tokens []string
+	res, err := p.GenerateStream(context.Background(), &model.GenerateRequest{Model: "gemma4:31b", System: "sys", Prompt: "q"}, func(t string) { tokens = append(tokens, t) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Response != "Hallo Welt" || len(tokens) != 2 || res.PromptTokens != 12 || p.Name() != "ollama-cloud" {
+		t.Errorf("unexpected result %+v tokens %v", res, tokens)
+	}
+}
+
+func TestOllamaProvider_ErrorKinds(t *testing.T) {
+	for status, kind := range map[int]string{401: ErrKindAuth, 429: ErrKindRateLimit, 503: ErrKindUnavailable} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(status)
+		}))
+		_, err := NewOllamaProvider(srv.URL, nil, WithOllamaCloud("ollama-cloud", "k")).Generate(context.Background(), &model.GenerateRequest{Model: "m"})
+		srv.Close()
+		var perr *Error
+		if !errors.As(err, &perr) || perr.Kind != kind || perr.Provider != "ollama-cloud" {
+			t.Errorf("status %d: expected kind %s, got %v", status, kind, err)
+		}
 	}
 }
