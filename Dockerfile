@@ -18,4 +18,5 @@ COPY --from=builder /app/md-search .
 COPY --from=builder /app/md-api .
 
 EXPOSE 8080 8081
-CMD ["./md-api"]
+# The container has its own network namespace; listen on all of its interfaces so published ports work.
+CMD ["./md-api", "-host", "0.0.0.0"]

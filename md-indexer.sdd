@@ -27,7 +27,8 @@ It maintains a strict one-way flow of information: Markdown files are the single
 *   **FORBIDS** the use of global variables for state management.
 *   **FORBIDS** writing any code that violates the standard Go project layout (`cmd/`, `internal/`).
 *   **MUST NOT** access the SQLite database or the vault's Markdown files directly from client apps under `apps/`.
-*   **MUST** bind sidecar processes started by client apps to the loopback interface (`127.0.0.1`).
+*   **MUST** bind HTTP servers (`md-indexer`, `md-api`, and sidecars started by client apps) to the loopback interface (`127.0.0.1`) by default; listening on other interfaces requires an explicit `-host` and logs a warning.
+*   **MUST NOT** send wildcard CORS headers (`Access-Control-Allow-Origin: *`).
 
 ## 4. Code Standards
 *   **Language:** All code documentation and comments must be in English.

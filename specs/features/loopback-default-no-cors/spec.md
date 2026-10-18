@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 # Feature Specification: Loopback by Default, No Wildcard CORS
 
 **Issue:** [#31](https://github.com/Zheng-Bote/md_indexer-searcher/issues/31)  
-**Status:** Planned (`/speckit.plan`) · Decisions confirmed 2026-10-18
+**Status:** Implemented (`/speckit.implement`) · Decisions confirmed 2026-10-18
 
 ## 1. Feature Intent
 
@@ -83,10 +83,11 @@ SPDX-License-Identifier: Apache-2.0
 
 ## 8. Acceptance Criteria
 
-- [ ] Without `-host`, both binaries bind to `127.0.0.1` (checked via the listen address, and manually from another interface address).
-- [ ] A non-loopback `-host` logs the warning; loopback hosts (`127.0.0.1`, `::1`, `localhost`) do not.
-- [ ] No response of `md-api` carries an `Access-Control-Allow-Origin` header.
-- [ ] `md-indexer` answers `/health`; `/documents` and `/search` return `404`.
-- [ ] Desktop app works unchanged (`cargo test`, manual run of a question and the document viewer).
-- [ ] `go test ./...` with tests for the address helper and the missing CORS header.
-- [ ] `md-indexer.sdd`, `README.md`, `CHANGELOG.md`, `Dockerfile`, `docs/architektur_erweiterung.md` are up-to-date.
+- [x] Without `-host`, both binaries bind to `127.0.0.1` (checked via the listen address, and manually from another interface address).
+- [x] A non-loopback `-host` logs the warning; loopback hosts (`127.0.0.1`, `::1`, `localhost`) do not.
+- [x] No response of `md-api` carries an `Access-Control-Allow-Origin` header.
+- [x] `md-indexer` answers `/health`; `/documents` and `/search` return `404`.
+- [x] Desktop app works unchanged (`cargo test`; sidecar arguments unchanged, they already pass `-host 127.0.0.1`).
+- [x] `go test ./...` with tests for the address helper and the missing CORS header.
+- [x] `md-indexer.sdd`, `README.md`, `CHANGELOG.md`, `Dockerfile` are up-to-date.
+- [ ] `docs/architektur_erweiterung.md` 4.4 marked implemented (after PR #32 is merged).

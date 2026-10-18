@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- **Loopback by default, no wildcard CORS (`#31`):** `md-api` and `md-indexer` listen on `127.0.0.1` unless `-host` is given; a non-loopback `-host` (including `0.0.0.0` and an empty value) logs a warning that the API is reachable without authentication. `md-api` no longer sends `Access-Control-Allow-Origin: *`, so web pages in the browser cannot read the local API. Listen addresses are built with `net.JoinHostPort` (IPv6 literals work). **Behaviour change:** remote access now requires an explicit `-host 0.0.0.0`; the `Dockerfile` passes it for `md-api`.
+
+### Removed
+- **`md-indexer` HTTP routes `/documents` and `/search` (`#31`):** they were unused and bypassed the search engine layer; `md-indexer` now only serves `/health`. Use `md-api` (`/api/search`, `/api/document`) instead.
+
 ### Fixed
 - **Duplicate notes and repeated headings (`#29`):** Document IDs are now derived from the vault-relative path instead of the content hash, so notes with identical content (e.g. untouched notes from the same template) are all indexed and no longer overwrite or delete each other; renames and moves work in any watcher event order. A heading that occurs more than once in a note now gets its own section (`#2`, `#3`, …) instead of being dropped. `UpsertDocument` / `RemoveDocument` roll back on any failing statement and the indexer logs the file instead of committing a partial document. Existing indexes are migrated on the next `md-indexer` run; section embeddings are re-keyed, so only previously dropped sections are embedded (test vault: 3,980 embeddings kept, 275 new).
 
