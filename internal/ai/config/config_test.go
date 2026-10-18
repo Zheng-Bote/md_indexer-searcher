@@ -20,8 +20,21 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Retriever != RetrieverHybrid {
 		t.Fatalf("expected default retriever hybrid, got %s", cfg.Retriever)
 	}
+	if cfg.DBPath != "" {
+		t.Fatalf("expected empty default db_path (resolved from the vault by the tools), got %s", cfg.DBPath)
+	}
+	cfg.DBPath = "/vault/.md_indexer/md_indexer.db"
 	if err := cfg.Validate(); err != nil {
-		t.Fatalf("default config should be valid, got: %v", err)
+		t.Fatalf("default config with a resolved database should be valid, got: %v", err)
+	}
+}
+
+func TestConfig_ExplicitDBPathFromEnv(t *testing.T) {
+	t.Setenv("MD_AI_DB_PATH", "/data/explicit.db")
+	cfg := DefaultConfig()
+	cfg.LoadFromEnv()
+	if cfg.DBPath != "/data/explicit.db" {
+		t.Fatalf("expected MD_AI_DB_PATH to set db_path, got %q", cfg.DBPath)
 	}
 }
 

@@ -23,11 +23,13 @@ import (
 	"github.com/md-indexer/internal/ai/hybrid"
 	"github.com/md-indexer/internal/ai/model"
 	"github.com/md-indexer/internal/ai/provider"
+	"github.com/md-indexer/internal/vaultdb"
 	_ "modernc.org/sqlite"
 )
 
 var (
 	cfgFile      string
+	vaultDir     string
 	retrieveOnly bool
 	streamOutput bool
 	cfg          = config.DefaultConfig()
@@ -35,7 +37,7 @@ var (
 		Use:   "md-ai",
 		Short: "Grounded local AI assistant over Markdown knowledge bases",
 		Long: `md-ai is a local, grounded AI retrieval-augmented generation (RAG) assistant
-that queries Markdown notes indexed in SQLite knowledge.db using local LLMs (Ollama).`,
+that queries Markdown notes indexed by md-indexer (SQLite) using local LLMs (Ollama).`,
 	}
 )
 
@@ -44,7 +46,8 @@ func init() {
 	cfg.LoadFromEnv()
 
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "Path to YAML configuration file (defaults to ~/.config/md-indexer/ai.yaml and ./md-ai.yaml)")
-	rootCmd.PersistentFlags().StringVar(&cfg.DBPath, "db", cfg.DBPath, "Path to SQLite knowledge database")
+	rootCmd.PersistentFlags().StringVar(&cfg.DBPath, "db", cfg.DBPath, "Path to SQLite knowledge database (default: index database of --vault)")
+	rootCmd.PersistentFlags().StringVar(&vaultDir, "vault", ".", "Vault whose index database is used when no database path is configured")
 	rootCmd.PersistentFlags().StringVar(&cfg.OllamaHost, "ollama-host", cfg.OllamaHost, "Ollama API host URL")
 	rootCmd.PersistentFlags().StringVarP(&cfg.Model, "model", "m", cfg.Model, "LLM model name")
 	rootCmd.PersistentFlags().Float64Var(&cfg.Temperature, "temperature", cfg.Temperature, "Generation temperature")
@@ -70,6 +73,15 @@ func initAssistant() (*assistant.Assistant, *sql.DB, error) {
 	if cfgFile != "" {
 		if err := cfg.LoadFromFile(cfgFile); err != nil {
 			return nil, nil, fmt.Errorf("failed to load config %s: %w", cfgFile, err)
+		}
+	}
+	if cfg.DBPath == "" {
+		dataDir, err := vaultdb.UserDataDir()
+		if err != nil {
+			return nil, nil, err
+		}
+		if cfg.DBPath, err = vaultdb.ForReader(vaultDir, dataDir); err != nil {
+			return nil, nil, err
 		}
 	}
 	if err := cfg.Validate(); err != nil {

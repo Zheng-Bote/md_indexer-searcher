@@ -19,6 +19,7 @@ import (
 	"github.com/md-indexer/internal/api/rest"
 	"github.com/md-indexer/internal/repository"
 	"github.com/md-indexer/internal/search"
+	"github.com/md-indexer/internal/vaultdb"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -29,7 +30,8 @@ func main() {
 	_ = aiCfg.LoadDefaultFiles()
 	aiCfg.LoadFromEnv()
 
-	dbPath := flag.String("db", "index.db", "Path to SQLite database")
+	dbPath := flag.String("db", "", "Path to SQLite database (default: index database of -vault)")
+	vault := flag.String("vault", ".", "Vault whose index database is used when -db is not set")
 	port := flag.String("port", "8081", "HTTP server port")
 	host := flag.String("host", "", "HTTP bind address, e.g. 127.0.0.1 (empty listens on all interfaces)")
 	aiEnabled := flag.Bool("ai", false, "Enable AI assistant endpoint (/api/ai/ask)")
@@ -42,6 +44,14 @@ func main() {
 	maxContextTokens := flag.Int("max-context-tokens", aiCfg.MaxContextTokens, "Max context token budget for AI endpoint")
 	timeoutSec := flag.Int("timeout", aiCfg.TimeoutSeconds, "LLM request timeout in seconds")
 	flag.Parse()
+
+	if *dbPath == "" {
+		path, err := resolveDB(*vault)
+		if err != nil {
+			log.Fatal().Err(err).Msg("Failed to resolve database")
+		}
+		*dbPath = path
+	}
 
 	repo, err := repository.NewSQLiteRepository(*dbPath)
 	if err != nil {
@@ -104,4 +114,13 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	httpServer.Shutdown(ctx)
+}
+
+// resolveDB finds the existing index database of a vault without creating one.
+func resolveDB(vault string) (string, error) {
+	dataDir, err := vaultdb.UserDataDir()
+	if err != nil {
+		return "", err
+	}
+	return vaultdb.ForReader(vault, dataDir)
 }

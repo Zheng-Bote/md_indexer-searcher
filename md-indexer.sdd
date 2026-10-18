@@ -15,6 +15,7 @@ It maintains a strict one-way flow of information: Markdown files are the single
 
 ## 3. Strict Rules (Must / Must Not / Forbids)
 *   **MUST** treat markdown files as immutable (Read-Only). No bidirectional sync.
+*   **MUST** limit writes inside a vault to `<vault>/.md_indexer/` (index database and its housekeeping files); only `md-indexer` writes there.
 *   **MUST** keep the SQLite index rebuildable from the vault; re-indexing MUST NOT drop valid section embeddings.
 *   **MUST** use Clean Architecture and Dependency Injection.
 *   **MUST NOT** use CGO dependencies (e.g., `modernc.org/sqlite` must be used).

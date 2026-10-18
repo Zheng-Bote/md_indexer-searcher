@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Vault-local index database (`#23`):** The index now lives in `<vault>/.md_indexer/md_indexer.db` by default for all tools and the desktop app, with a `.gitignore` (`*`) in that folder. If the vault is not writable, `md-indexer` falls back to `<user data dir>/md-indexer/vaults/<hash>.db`. `md-api -vault`, `md-search --vault` and `md-ai --vault` (default: current directory) find the existing database and fail with a clear message instead of creating an empty one. The desktop app passes only the vault; its previous databases are moved into the vault once via the new `md-indexer -migrate-from` flag, embeddings included.
+- **Breaking (CLI defaults):** `-db` / `--db` no longer default to `index.db` (`md-indexer`, `md-api`, `md-search`) or `knowledge.db` (`md-ai`). Existing databases are not migrated automatically; pass `-db index.db` to keep using one, or re-index. `md-ai.example.yaml` no longer sets `db_path`.
+
 ### Added
 - **Desktop document viewer (`#22`):** Cited sources open as rendered Markdown in an overlay above the answer, scrolled to the cited section. Resolvable wikilinks navigate to other documents of the current vault with a back history; "Schließen"/`Esc` returns to the unchanged answer. Frontmatter is hidden, rendered HTML is sanitized; external links, images and embeds are shown as text.
 - **`GET /api/document` (`md-api`, `#22`):** Returns an indexed document's original Markdown and its resolved outgoing wikilinks, by `path` or by `title` (case-insensitive; same folder as `from`, then shortest path, then alphabetical). Served from the index only; non-indexed paths return `404`.
