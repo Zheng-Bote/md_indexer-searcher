@@ -158,29 +158,43 @@ docker run -p 8080:8080 -p 8081:8081 -v /pfad/zum/vault:/app/vault md-knowledge-
 
 ## Usage & Examples
 
+### Database Location
+
+Each vault gets its own index database, used by all tools and the desktop app:
+
+1. `<vault>/.md_indexer/md_indexer.db` (default). `md-indexer` creates the folder together with a `.gitignore` (`*`), so the database is never committed. Exclude `.md_indexer/` in sync tools (Syncthing, Nextcloud, …) as well: a SQLite file synced between machines can get corrupted.
+2. If the vault is not writable: `<user data dir>/md-indexer/vaults/<hash>.db` (`$XDG_DATA_HOME` or `~/.local/share` on Linux, `~/Library/Application Support` on macOS, `%LocalAppData%` on Windows).
+
+`md-indexer` resolves it from `-dir`; `md-api -vault`, `md-search --vault` and `md-ai --vault` (default: current directory) find the existing database and fail with a clear message if the vault has not been indexed yet. An explicit `-db` / `--db` (or `MD_AI_DB_PATH` / `db_path` for `md-ai`) always wins, e.g. to keep using an existing `index.db`.
+
+Nothing inside the vault except `.md_indexer/` is ever written.
+
 ### 1. md-indexer (File Watcher & Indexer)
 
 Indexes a folder recursively and monitors it for future changes.
 
 ```bash
-./bin/md-indexer -dir /path/to/obsidian/vault -db index.db -port 8080
+./bin/md-indexer -dir /path/to/obsidian/vault -port 8080
 
 # Compute local section embeddings for vector retrieval (Ollama, e.g. bge-m3)
 # and listen on localhost only:
-./bin/md-indexer -dir /path/to/obsidian/vault -db index.db -embed-model bge-m3 -host 127.0.0.1
+./bin/md-indexer -dir /path/to/obsidian/vault -embed-model bge-m3 -host 127.0.0.1
 
 # Force re-parsing all notes and purging excluded (_templates_, .obsidian) or deleted paths
 # without dropping existing section_embeddings:
-./bin/md-indexer -dir /path/to/obsidian/vault -db index.db -force
+./bin/md-indexer -dir /path/to/obsidian/vault -force
+
+# Use an explicit database file instead of the vault-local one:
+./bin/md-indexer -dir /path/to/obsidian/vault -db index.db
 ```
 
 ### 2. md-search (CLI Explorer)
 
-Allows searching the graph from the terminal. The `-db` flag can be set (default is `index.db`).
+Allows searching the graph from the terminal. It uses the index of `--vault` (default: current directory) unless `--db` is set.
 
 ```bash
 # Full-text search via FTS5 (title, content, tags)
-./bin/md-search search "encryption strategy"
+./bin/md-search --vault /path/to/obsidian/vault search "encryption strategy"
 
 # Format output as JSON (available on all subcommands)
 ./bin/md-search search "encryption strategy" --json
@@ -209,7 +223,7 @@ Starts an HTTP server that accepts search and graph requests (default port 8081)
 ```bash
 make api-run
 # or manually:
-./bin/md-api -db index.db -port 8081
+./bin/md-api -vault /path/to/obsidian/vault -port 8081
 ```
 
 **Endpoints:**
@@ -231,7 +245,7 @@ Use `-host 127.0.0.1` to listen on localhost only (`md-indexer` accepts the same
 
 ### 4. Desktop App (`apps/desktop`)
 
-A Tauri v2 + Angular + Spartan-ng desktop client: pick a vault folder, choose the generation and embedding model, and ask questions. It runs `md-indexer` and `md-api` as local sidecars (bound to `127.0.0.1`) and keeps one database per vault in the app data directory. Any change of vault or model restarts the sidecars. Cited sources open in an inline Markdown viewer; wikilinks navigate within the vault, and "Zurück"/"Schließen" return to the unchanged answer.
+A Tauri v2 + Angular + Spartan-ng desktop client: pick a vault folder, choose the generation and embedding model, and ask questions. It runs `md-indexer` and `md-api` as local sidecars (bound to `127.0.0.1`) and uses the vault's own database (`<vault>/.md_indexer/`, see "Database Location"); databases from earlier app versions are moved there once. Any change of vault or model restarts the sidecars. Cited sources open in an inline Markdown viewer; wikilinks navigate within the vault, and "Zurück"/"Schließen" return to the unchanged answer.
 
 ```bash
 make desktop-dev   # build sidecars and start the app in dev mode

@@ -10,19 +10,36 @@ import (
 
 	"github.com/md-indexer/internal/repository"
 	"github.com/md-indexer/internal/search"
+	"github.com/md-indexer/internal/vaultdb"
 	"github.com/spf13/cobra"
 )
 
 var dbPath string
+var vaultDir string
 var jsonOutput bool
 
 func main() {
 	rootCmd := &cobra.Command{
 		Use:   "md-search",
 		Short: "CLI Knowledge Explorer",
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			if dbPath != "" {
+				return nil
+			}
+			dataDir, err := vaultdb.UserDataDir()
+			if err != nil {
+				return err
+			}
+			if dbPath, err = vaultdb.ForReader(vaultDir, dataDir); err != nil {
+				// A missing index is not a usage error; print only the message.
+				cmd.SilenceUsage = true
+			}
+			return err
+		},
 	}
 
-	rootCmd.PersistentFlags().StringVar(&dbPath, "db", "index.db", "Path to SQLite database")
+	rootCmd.PersistentFlags().StringVar(&dbPath, "db", "", "Path to SQLite database (default: index database of --vault)")
+	rootCmd.PersistentFlags().StringVar(&vaultDir, "vault", ".", "Vault whose index database is used when --db is not set")
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Output as JSON")
 
 	searchCmd := &cobra.Command{

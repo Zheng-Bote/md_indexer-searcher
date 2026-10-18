@@ -16,6 +16,7 @@ import (
 	"github.com/md-indexer/internal/embedding"
 	"github.com/md-indexer/internal/repository"
 	"github.com/md-indexer/internal/service"
+	"github.com/md-indexer/internal/vaultdb"
 	"github.com/md-indexer/internal/watcher"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -25,13 +26,40 @@ func main() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.RFC3339})
 
 	dir := flag.String("dir", ".", "Directory to index")
-	dbPath := flag.String("db", "index.db", "Path to SQLite database")
+	dbPath := flag.String("db", "", "Path to SQLite database (default: <dir>/.md_indexer/md_indexer.db, or the user data dir if the vault is not writable)")
 	port := flag.String("port", "8080", "HTTP server port")
 	host := flag.String("host", "", "HTTP bind address, e.g. 127.0.0.1 (empty listens on all interfaces)")
 	embedModel := flag.String("embed-model", "", "Ollama embedding model for vector retrieval, e.g. bge-m3 (empty disables embeddings)")
 	ollamaHost := flag.String("ollama-host", "http://localhost:11434", "Ollama API host URL for embeddings")
 	force := flag.Bool("force", false, "Force re-parsing all Markdown files and purge skipped/deleted entries without dropping unchanged embeddings")
+	migrateFrom := flag.String("migrate-from", "", "Legacy database to move to the resolved location once (with -wal/-shm), if that location has no database yet")
 	flag.Parse()
+
+	if *dbPath == "" {
+		dataDir, err := vaultdb.UserDataDir()
+		if err != nil {
+			log.Fatal().Err(err).Msg("Failed to determine user data directory")
+		}
+		path, fallback, err := vaultdb.ForWriter(*dir, dataDir)
+		if err != nil {
+			log.Fatal().Err(err).Msg("Failed to resolve database location")
+		}
+		if fallback {
+			log.Warn().Str("db", path).Msg("Vault not writable, using fallback database")
+		} else {
+			log.Info().Str("db", path).Msg("Using vault-local database")
+		}
+		*dbPath = path
+	}
+	if *migrateFrom != "" {
+		moved, err := vaultdb.MigrateLegacy(*migrateFrom, *dbPath)
+		if err != nil {
+			log.Fatal().Err(err).Str("from", *migrateFrom).Msg("Failed to migrate legacy database")
+		}
+		if moved {
+			log.Info().Str("from", *migrateFrom).Str("db", *dbPath).Msg("Migrated legacy database")
+		}
+	}
 
 	cfg := config.Config{
 		Directory: *dir,

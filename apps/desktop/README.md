@@ -10,8 +10,8 @@ Desktop client for md-indexer (Tauri v2, Angular 22, Spartan-ng). Pick a vault, 
 ## How it works
 
 - The app starts two sidecars per vault, both bound to `127.0.0.1` on free ports:
-  1. `md-indexer -dir <vault> -db <appData>/vaults/<hash>.db` builds and watches the index. Its `/health` only answers after the initial index is done, so the app shows "Indexiere Vault…" until then.
-  2. `md-api -ai -db <same db>` serves `/api/ai/ask`, `/api/ai/models` and `/api/document`.
+  1. `md-indexer -dir <vault>` builds and watches the index in `<vault>/.md_indexer/md_indexer.db` (or the user data dir fallback for read-only vaults). A database from an earlier app version (`<appData>/vaults/<hash>.db`) is passed as `-migrate-from` and moved there once, embeddings included. Its `/health` only answers after the initial index is done, so the app shows "Indexiere Vault…" until then.
+  2. `md-api -ai -vault <vault>` opens the same database and serves `/api/ai/ask`, `/api/ai/models` and `/api/document`.
 - Changing the vault or a model restarts both sidecars. Unchanged notes are not re-parsed, and embeddings are only computed for sections that are missing them.
 - Without an embedding model, `md-api` runs with `-vectors=false` (full-text and graph retrieval only).
 - `md-api` reads `~/.config/md-indexer/ai.yaml` as usual (Ollama host, context budget, …). Values chosen in the app take precedence.

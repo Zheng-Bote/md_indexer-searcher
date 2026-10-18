@@ -93,7 +93,7 @@ impl SidecarManager {
         if !vault.is_dir() {
             return Err(format!("vault is not a directory: {}", config.vault));
         }
-        let db_path = database_path(app, vault)?;
+        let legacy_db = legacy_database_path(app, vault)?;
 
         let generation = {
             let mut inner = self.inner.lock().unwrap();
@@ -111,7 +111,7 @@ impl SidecarManager {
 
         let app = app.clone();
         tauri::async_runtime::spawn(async move {
-            if let Err(err) = start(&app, generation, &config, &db_path).await {
+            if let Err(err) = start(&app, generation, &config, &legacy_db).await {
                 app.state::<SidecarManager>().update(
                     &app,
                     generation,
@@ -193,28 +193,16 @@ async fn start(
     app: &AppHandle,
     generation: u64,
     config: &BackendConfig,
-    db_path: &Path,
+    legacy_db: &Path,
 ) -> Result<(), String> {
     let manager = app.state::<SidecarManager>();
-    let db = db_path.to_string_lossy().into_owned();
     let embedding_model = config.embedding_model.as_deref().filter(|m| !m.is_empty());
 
     // md-indexer only opens its HTTP port after the initial index is complete,
     // so a healthy /health doubles as the "indexing finished" signal.
     let indexer_port = free_port()?;
-    let mut args = vec![
-        "-dir".to_string(),
-        config.vault.clone(),
-        "-db".to_string(),
-        db.clone(),
-        "-host".to_string(),
-        BIND_HOST.to_string(),
-        "-port".to_string(),
-        indexer_port.to_string(),
-    ];
-    if let Some(embedding) = embedding_model {
-        args.extend(["-embed-model".to_string(), embedding.to_string()]);
-    }
+    let legacy_db = legacy_db.is_file().then_some(legacy_db);
+    let args = indexer_args(&config.vault, legacy_db, indexer_port, embedding_model);
     spawn(app, generation, Sidecar::Indexer, args)?;
     if !wait_healthy(app, generation, indexer_port).await {
         return Ok(());
@@ -222,16 +210,63 @@ async fn start(
 
     manager.update(app, generation, BackendState::Starting, None, None);
     let api_port = free_port()?;
+    let model = config.model.as_deref().filter(|m| !m.is_empty());
+    let args = api_args(&config.vault, api_port, model, embedding_model);
+    spawn(app, generation, Sidecar::Api, args)?;
+    if !wait_healthy(app, generation, api_port).await {
+        return Ok(());
+    }
+
+    let url = format!("http://{BIND_HOST}:{api_port}");
+    manager.update(app, generation, BackendState::Ready, Some(url), None);
+    Ok(())
+}
+
+/// Arguments for `md-indexer`. The database location is resolved by md-indexer itself
+/// (`<vault>/.md_indexer/`, or its user data dir fallback); a legacy app database is moved there once.
+fn indexer_args(
+    vault: &str,
+    legacy_db: Option<&Path>,
+    port: u16,
+    embedding_model: Option<&str>,
+) -> Vec<String> {
     let mut args = vec![
-        "-db".to_string(),
-        db,
+        "-dir".to_string(),
+        vault.to_string(),
         "-host".to_string(),
         BIND_HOST.to_string(),
         "-port".to_string(),
-        api_port.to_string(),
+        port.to_string(),
+    ];
+    if let Some(legacy) = legacy_db {
+        args.extend([
+            "-migrate-from".to_string(),
+            legacy.to_string_lossy().into_owned(),
+        ]);
+    }
+    if let Some(embedding) = embedding_model {
+        args.extend(["-embed-model".to_string(), embedding.to_string()]);
+    }
+    args
+}
+
+/// Arguments for `md-api`; it opens the index database that md-indexer resolved for the vault.
+fn api_args(
+    vault: &str,
+    port: u16,
+    model: Option<&str>,
+    embedding_model: Option<&str>,
+) -> Vec<String> {
+    let mut args = vec![
+        "-vault".to_string(),
+        vault.to_string(),
+        "-host".to_string(),
+        BIND_HOST.to_string(),
+        "-port".to_string(),
+        port.to_string(),
         "-ai".to_string(),
     ];
-    if let Some(model) = config.model.as_deref().filter(|m| !m.is_empty()) {
+    if let Some(model) = model {
         args.extend(["-model".to_string(), model.to_string()]);
     }
     match embedding_model {
@@ -242,14 +277,7 @@ async fn start(
         ]),
         None => args.push("-vectors=false".to_string()),
     }
-    spawn(app, generation, Sidecar::Api, args)?;
-    if !wait_healthy(app, generation, api_port).await {
-        return Ok(());
-    }
-
-    let url = format!("http://{BIND_HOST}:{api_port}");
-    manager.update(app, generation, BackendState::Ready, Some(url), None);
-    Ok(())
+    args
 }
 
 fn spawn(
@@ -350,7 +378,9 @@ fn free_port() -> Result<u16, String> {
 
 /// Each vault gets its own database, keyed by a hash of its absolute path, so switching
 /// back to a vault reuses its index and embeddings.
-fn database_path(app: &AppHandle, vault: &Path) -> Result<PathBuf, String> {
+/// Database location used by app versions before the vault-local database (issue #23).
+/// Only computed here; md-indexer moves the file into the vault if it exists.
+fn legacy_database_path(app: &AppHandle, vault: &Path) -> Result<PathBuf, String> {
     let absolute = vault
         .canonicalize()
         .map_err(|e| format!("cannot resolve vault path: {e}"))?;
@@ -362,7 +392,6 @@ fn database_path(app: &AppHandle, vault: &Path) -> Result<PathBuf, String> {
         .app_data_dir()
         .map_err(|e| format!("no app data directory: {e}"))?
         .join("vaults");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
     Ok(dir.join(format!("{key}.db")))
 }
 
@@ -386,7 +415,62 @@ fn strip_ansi(input: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::strip_ansi;
+    use super::{api_args, indexer_args, strip_ansi};
+    use std::path::Path;
+
+    #[test]
+    fn indexer_args_pass_vault_and_optional_migration() {
+        assert_eq!(
+            indexer_args("/v", None, 4711, None),
+            ["-dir", "/v", "-host", "127.0.0.1", "-port", "4711"]
+        );
+        assert_eq!(
+            indexer_args(
+                "/v",
+                Some(Path::new("/data/vaults/ab.db")),
+                4711,
+                Some("bge-m3")
+            ),
+            [
+                "-dir",
+                "/v",
+                "-host",
+                "127.0.0.1",
+                "-port",
+                "4711",
+                "-migrate-from",
+                "/data/vaults/ab.db",
+                "-embed-model",
+                "bge-m3",
+            ]
+        );
+    }
+
+    #[test]
+    fn api_args_use_the_vault_instead_of_a_database_path() {
+        let args = api_args("/v", 4712, Some("qwen3:32b"), None);
+        assert_eq!(
+            args,
+            [
+                "-vault",
+                "/v",
+                "-host",
+                "127.0.0.1",
+                "-port",
+                "4712",
+                "-ai",
+                "-model",
+                "qwen3:32b",
+                "-vectors=false",
+            ]
+        );
+        assert!(!args.iter().any(|a| a == "-db"));
+        assert!(api_args("/v", 4712, None, Some("bge-m3")).ends_with(&[
+            "-vectors=true".to_string(),
+            "-embedding-model".to_string(),
+            "bge-m3".to_string(),
+        ]));
+    }
 
     #[test]
     fn strips_color_sequences() {

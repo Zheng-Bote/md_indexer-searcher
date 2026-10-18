@@ -42,7 +42,7 @@ The app is a thin client. All indexing, retrieval and generation stays in the ex
 3. **Ollama Failure:**
    **IF** Ollama cannot be reached while listing models, **THEN THE SYSTEM SHALL** respond with `502` and an `ErrorResponse` naming the Ollama host.
 4. **Vault Database Isolation:**
-   **WHEN** a vault is selected in the desktop app, **THE SYSTEM SHALL** use a database file in the app data directory that is derived deterministically from the absolute vault path, so each vault keeps its own index and embeddings.
+   **WHEN** a vault is selected in the desktop app, **THE SYSTEM SHALL** use the vault's own database, so each vault keeps its own index and embeddings. *(Updated by [#23](https://github.com/Zheng-Bote/md_indexer-searcher/issues/23): the database lives in `<vault>/.md_indexer/`, resolved by the Go tools; see `specs/features/vault-local-database/spec.md`. It was previously derived from the vault path inside the app data directory.)*
 5. **Sidecar Restart on Configuration Change:**
    **WHEN** the vault, generation model or embedding model changes, **THE SYSTEM SHALL** stop both sidecars and restart them with the new arguments, and **SHALL NOT** accept questions until `md-api` reports healthy on `/health`.
 6. **Indexing State:**

@@ -4,8 +4,10 @@
 # Example configuration for md-ai and md-api (-ai).
 # Copy to ~/.config/md-indexer/ai.yaml or ./md-ai.yaml, or pass via --config / MD_AI_CONFIG.
 
-# Path to the SQLite index built by md-indexer (opened strictly read-only by md-ai)
-db_path: "knowledge.db"
+# Path to the SQLite index built by md-indexer (opened strictly read-only by md-ai).
+# Leave unset to use the index of --vault (<vault>/.md_indexer/md_indexer.db, or the
+# user data dir fallback). Setting it overrides that resolution for every vault.
+# db_path: "/path/to/index.db"
 
 # Local Ollama endpoint and generation model
 ollama_host: "http://localhost:11434"

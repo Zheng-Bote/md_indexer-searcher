@@ -49,7 +49,8 @@ const (
 // DefaultConfig returns the default configuration.
 func DefaultConfig() *Config {
 	return &Config{
-		DBPath:           "knowledge.db",
+		// Empty: the tools resolve the vault's index database (see internal/vaultdb).
+		DBPath:           "",
 		OllamaHost:       "http://localhost:11434",
 		Model:            "qwen3:14b",
 		Temperature:      0.2,

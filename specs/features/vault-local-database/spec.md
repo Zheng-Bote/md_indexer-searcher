@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 # Feature Specification: Vault-Local Index Database
 
 **Issue:** [#23](https://github.com/Zheng-Bote/md_indexer-searcher/issues/23)  
-**Status:** Planned (`/speckit.plan`) · Decisions confirmed 2026-10-18
+**Status:** Implemented (`/speckit.implement`) · Decisions confirmed 2026-10-18
 
 ## 1. Feature Intent
 
@@ -100,11 +100,11 @@ The readers (`md-api`, `md-search`, `md-ai`) do not know the vault, so they need
 
 ## 7. Acceptance Criteria
 
-- [ ] Without `-db`, `md-indexer -dir V` writes `V/.md_indexer/md_indexer.db` and `V/.md_indexer/.gitignore`.
-- [ ] A read-only vault falls back to the user data dir with a log message.
-- [ ] `md-api -vault V`, `md-search --vault V`, `md-ai --vault V` open the same database; without an index they fail with a clear message and create nothing.
-- [ ] Explicit `-db` / `--db` / `MD_AI_DB_PATH` / `db_path` behave as before.
-- [ ] The desktop app uses the vault-local database and migrates an existing legacy database once, keeping embeddings.
-- [ ] Nothing inside `.md_indexer/` is indexed.
-- [ ] Tests: `go test ./...` (resolution, fallback, readers, gitignore, legacy move) and `cargo test` (sidecar arguments).
-- [ ] `README.md`, `apps/desktop/README.md`, `md-ai.example.yaml`, `CHANGELOG.md`, `md-indexer.sdd` and the desktop-app spec are up-to-date.
+- [x] Without `-db`, `md-indexer -dir V` writes `V/.md_indexer/md_indexer.db` and `V/.md_indexer/.gitignore`.
+- [x] A read-only vault falls back to the user data dir with a log message.
+- [x] `md-api -vault V`, `md-search --vault V`, `md-ai --vault V` open the same database; without an index they fail with a clear message and create nothing.
+- [x] Explicit `-db` / `--db` / `MD_AI_DB_PATH` / `db_path` behave as before.
+- [x] The desktop app uses the vault-local database and migrates an existing legacy database once, keeping embeddings.
+- [x] Nothing inside `.md_indexer/` is indexed.
+- [x] Tests: `go test ./...` (resolution, fallback, readers, gitignore, legacy move) and `cargo test` (sidecar arguments).
+- [x] `README.md`, `apps/desktop/README.md`, `md-ai.example.yaml`, `CHANGELOG.md`, `md-indexer.sdd` and the desktop-app spec are up-to-date.
