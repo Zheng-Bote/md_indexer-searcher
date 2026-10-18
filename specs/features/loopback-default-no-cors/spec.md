@@ -53,7 +53,7 @@ SPDX-License-Identifier: Apache-2.0
 ## 4. Non-Goals
 
 - Authentication for remote access (bearer token, mTLS) — tracked as blocker 4.3 in `docs/architektur_erweiterung.md`.
-- A configurable CORS allowlist. No browser-based client exists; it can be added when one does (see Open Decisions).
+- A configurable CORS allowlist. No browser-based client exists; it can be added when one does (see Decisions).
 - Fixing the outdated `Dockerfile` base image (`golang:1.21` vs. `go 1.27` in `go.mod`) or adding a vault/indexer setup to the container; only the `md-api` command changes.
 
 ## 5. Decisions (2026-10-18)
