@@ -232,7 +232,7 @@ Wichtig für die Bewertung des Restrisikos: Das ist **Best-Effort auf Regex-Basi
 
 ## 4.3 Remote-Zugriff auf `md-api` `[Blocker]`
 
-`md-api` bietet derzeit nur `-host` und **keine Authentifizierung**; ohne `-host` lauscht es auf allen Schnittstellen (siehe 4.4). `md-indexer.sdd` verlangt zudem, dass von Client-Apps gestartete Sidecars an `127.0.0.1` binden.
+`md-api` bietet derzeit nur `-host` und **keine Authentifizierung**; seit #31 lauscht es ohne `-host` nur auf `127.0.0.1` (siehe 4.4), ein Remote-Zugriff erfordert also ein explizites `-host` und ist dann ungeschützt. `md-indexer.sdd` verlangt zudem, dass von Client-Apps gestartete Sidecars an `127.0.0.1` binden.
 
 Daraus folgt: Der im Deployment beschriebene Laptop-Online-Modus über WireGuard macht den vollständigen Vault netzwerklesbar — inklusive `/api/ai/ask`, das Kontextblöcke zurückliefert. Das ist kein Deployment-Detail, sondern eine Grenzverletzung. Vor Umsetzung zu entscheiden:
 
@@ -240,14 +240,17 @@ Daraus folgt: Der im Deployment beschriebene Laptop-Online-Modus über WireGuard
 - **Option B:** mTLS zwischen Laptop und Desktop.
 - **In jedem Fall:** `md-indexer.sdd` wird im selben Change aktualisiert (Loopback-Regel, Authentifizierungspflicht für nicht-loopback-Bindings). Laut `.specdd/bootstrap.project.md` ist eine Architekturänderung ohne Spec-Update unzulässig.
 
-## 4.4 Lokale Angriffsfläche von `md-api` und `md-indexer` `[Blocker]` (Issue [#31](https://github.com/Zheng-Bote/md_indexer-searcher/issues/31))
+## 4.4 Lokale Angriffsfläche von `md-api` und `md-indexer` `[implementiert]` (Issue [#31](https://github.com/Zheng-Bote/md_indexer-searcher/issues/31))
 
-Unabhängig vom Remote-Szenario gilt schon heute:
+Bis #31 lauschten `md-api` und `md-indexer` ohne `-host` auf allen Schnittstellen, und `md-api` sendete `Access-Control-Allow-Origin: *`. Damit waren Suche, `/api/document` und `/api/ai/ask` aus dem LAN und für jede im Browser geöffnete Webseite lesbar. Seit #31 gilt:
 
-- **Bind-Default:** `md-api` und `md-indexer` lauschen ohne `-host` auf **allen** Schnittstellen (`:8081` bzw. `:8080`). Wer die CLI ohne `-host 127.0.0.1` startet, macht ohne Authentifizierung im LAN erreichbar: bei `md-api` Suche, `/api/document` (Original-Markdown) und `/api/ai/ask`, bei `md-indexer` `/documents` (Dokumentliste) und `/search`. Nur die Desktop-Sidecars binden an `127.0.0.1`.
-- **CORS:** `md-api` setzt `Access-Control-Allow-Origin: *` (`internal/api/rest/server.go`). Jede im Browser geöffnete Webseite kann damit `http://127.0.0.1:8081/api/...` abfragen und die Antwort lesen. Die Desktop-App braucht CORS nicht (Tauri-HTTP-Plugin); die Sidecars nutzen zufällige Ports, die CLI aber den festen Port 8081.
+- **Bind-Default `127.0.0.1`** für beide Programme. Jede andere Adresse (auch `0.0.0.0` oder ein leerer Wert) muss explizit per `-host` gesetzt werden und erzeugt eine Warnung, dass die API ohne Authentifizierung erreichbar ist. Adressen werden mit `net.JoinHostPort` gebildet (IPv6-fähig).
+- **Kein CORS:** `md-api` sendet keine `Access-Control-*`-Header; Browser verweigern damit das Lesen fremder Antworten. Die Desktop-App nutzt das Tauri-HTTP-Plugin und braucht kein CORS.
+- **`md-indexer` beantwortet nur noch `/health`.** Die früheren Routen `/documents` und `/search` lasen das Repository direkt und umgingen die Search-Engine-Schicht.
+- **Docker:** `md-api` läuft im Container mit `-host 0.0.0.0`; die Ports sollten nur an `127.0.0.1` veröffentlicht werden.
+- `md-indexer.sdd` verlangt Loopback als Default für alle HTTP-Server und verbietet Wildcard-CORS.
 
-Vorschlag: Default-Bind `127.0.0.1` (ein Lauschen auf allen Schnittstellen nur explizit, z. B. `-host 0.0.0.0` mit Warnung) und CORS entfernen oder auf eine Allowlist beschränken. Beides vor jeder Cloud- oder Remote-Erweiterung, weil diese den Wert eines Zugriffs auf `/api/ai/ask` erhöhen.
+Für einen Zugriff von anderen Rechnern bleibt 4.3 (Authentifizierung) der Blocker.
 
 ## 4.5 Prompt Injection `[offen]`
 
@@ -647,7 +650,7 @@ md-api (Desktop-Server, authentifiziert)
 Ollama (qwen3:14b) + Index-DB
 ```
 
-**Voraussetzung:** Authentifizierung nach 4.3, die Härtung nach 4.4 und ein Spec-Update in `md-indexer.sdd`. Ohne das ist dieser Modus nicht zulässig.
+**Voraussetzung:** Authentifizierung nach 4.3 und ein Spec-Update in `md-indexer.sdd` (die lokale Härtung nach 4.4 ist umgesetzt). Ohne das ist dieser Modus nicht zulässig.
 
 ### Eigenständiger Betrieb (Lokal + optional `auto_context`)
 
@@ -693,28 +696,27 @@ Zusätzlich: ein Log-Eintrag pro Anfrage mit Provider, Modus, Plan, Token-Zahlen
 **Blocker (vor jeder Umsetzung zu klären):**
 
 1. `.env`-Loader mit Präzedenz und Dateirechten (4.1). Die `.gitignore`-Regel ist erledigt.
-2. Lokale Angriffsfläche (4.4, #31): Bind-Default `127.0.0.1` für `md-api`/`md-indexer` und CORS `*` entfernen bzw. auf eine Allowlist beschränken.
-3. Authentifizierung für remote `md-api`: Bearer-Token oder mTLS, plus Spec-Update in `md-indexer.sdd` (4.3).
+2. Authentifizierung für remote `md-api`: Bearer-Token oder mTLS, plus Spec-Update in `md-indexer.sdd` (4.3).
 
 **Offene Designentscheidungen:**
 
-4. Einstufung lokal/Cloud pro Modell (localhost-Host, kein `:cloud`-Modell) als Grundlage für `local_only`, Zustimmung und Badge (5.1).
-5. `BuildResult` mit `TotalTokens` und `Truncated` — Signaturänderung in `internal/ai/contextbuilder`.
-6. Zweiphasige Context-Budgetierung für `auto_context` — `RetrievalResult` hält `cloud_max_results` Kandidaten vor; `ContextBuilder` budgetiert bei Eskalation mit dem Cloud-Budget nach (ohne zweites DB-/Embedding-Retrieval).
-7. GraphDepth-Schwellwert gegen die Planner-Kappung — Default anheben oder Schwelle relativ zu `cfg.GraphDepth` setzen.
-8. Fail-closed bei Ollama-Ausfall — bestätigen, dass keine Eskalation stattfindet.
-9. Embedding-Modellwechsel-Warnung für CLI/Standalone (`md-ai` / `md-api`) — prüfen, ob für `cfg.EmbeddingModel` Einträge in `section_embeddings` vorliegen (in der Desktop-App bereits durch den vorgeschalteten `md-indexer`-Lauf gelöst).
-10. `impact` ohne Vektoren — Planner evaluieren.
-11. `break` vs. `continue` im Token-Budget — Verhalten festlegen und dokumentieren.
-12. Kostenlimits nur für kostenpflichtige Modelle; Rate-Limit-Behandlung für Free-Tier-Modelle (5.2).
+3. Einstufung lokal/Cloud pro Modell (localhost-Host, kein `:cloud`-Modell) als Grundlage für `local_only`, Zustimmung und Badge (5.1).
+4. `BuildResult` mit `TotalTokens` und `Truncated` — Signaturänderung in `internal/ai/contextbuilder`.
+5. Zweiphasige Context-Budgetierung für `auto_context` — `RetrievalResult` hält `cloud_max_results` Kandidaten vor; `ContextBuilder` budgetiert bei Eskalation mit dem Cloud-Budget nach (ohne zweites DB-/Embedding-Retrieval).
+6. GraphDepth-Schwellwert gegen die Planner-Kappung — Default anheben oder Schwelle relativ zu `cfg.GraphDepth` setzen.
+7. Fail-closed bei Ollama-Ausfall — bestätigen, dass keine Eskalation stattfindet.
+8. Embedding-Modellwechsel-Warnung für CLI/Standalone (`md-ai` / `md-api`) — prüfen, ob für `cfg.EmbeddingModel` Einträge in `section_embeddings` vorliegen (in der Desktop-App bereits durch den vorgeschalteten `md-indexer`-Lauf gelöst).
+9. `impact` ohne Vektoren — Planner evaluieren.
+10. `break` vs. `continue` im Token-Budget — Verhalten festlegen und dokumentieren.
+11. Kostenlimits nur für kostenpflichtige Modelle; Rate-Limit-Behandlung für Free-Tier-Modelle (5.2).
 
 **Geplant, aber noch nicht vorhanden:**
 
-13. Cloud-Provider und Modellauswahl nach Issue #24 (OpenAI-kompatibler Provider, Ollama-Cloud-Key, `.env`-Modellliste, Cloud-Badge, verständliche 401/429-Fehler).
-14. `POST /api/ai/compare` inklusive Schema in `openapi.yaml` (Standard `runs = 1` mit separater Ausweisung von Ollama `load_ms` / `prefill_ms` / `eval_ms`; optional `runs = 3` mit Median).
-15. Token- und Kostenfelder in `model.Answer` (`context_tokens`, `cost_usd`, `provider`, `locality`, `execution_mode`, `escalation_reason`).
+12. Cloud-Provider und Modellauswahl nach Issue #24 (OpenAI-kompatibler Provider, Ollama-Cloud-Key, `.env`-Modellliste, Cloud-Badge, verständliche 401/429-Fehler).
+13. `POST /api/ai/compare` inklusive Schema in `openapi.yaml` (Standard `runs = 1` mit separater Ausweisung von Ollama `load_ms` / `prefill_ms` / `eval_ms`; optional `runs = 3` mit Median).
+14. Token- und Kostenfelder in `model.Answer` (`context_tokens`, `cost_usd`, `provider`, `locality`, `execution_mode`, `escalation_reason`).
 
-**Erledigt seit der ersten Fassung:** vault-lokale Index-DB inkl. `md-ai --vault` (#23), Sync-Hinweis in der README, `.gitignore` für `.env`, Original-Markdown im Index (#22), pfadbasierte Dokument-IDs (#29).
+**Erledigt seit der ersten Fassung:** vault-lokale Index-DB inkl. `md-ai --vault` (#23), Sync-Hinweis in der README, `.gitignore` für `.env`, Original-Markdown im Index (#22), pfadbasierte Dokument-IDs (#29), Loopback-Default und kein Wildcard-CORS (#31).
 
 ---
 
