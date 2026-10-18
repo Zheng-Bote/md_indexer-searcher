@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 # Feature Specification: Local Model Filtering and Cloud LLM Providers
 
 **Issue:** [#24](https://github.com/Zheng-Bote/md_indexer-searcher/issues/24)  
-**Status:** Specified (`/speckit.specify`) · Decisions confirmed 2026-10-18  
+**Status:** Planned (`/speckit.plan`) · Decisions confirmed 2026-10-18  
 **Architecture context:** `docs/architektur_erweiterung.md` (4.1, 4.2, 5.1, 5.2 Stage 1, 12)
 
 ## 1. Feature Intent
@@ -98,11 +98,11 @@ Local CPU generation takes minutes (2026-10-18 benchmark: `qwen3:14b` ≈ 2 min 
 - Editing the `.env` from the desktop app (only its path is configurable there).
 - Remote access to `md-api` (blocker 4.3).
 
-## 5. Open Points for `/speckit.plan`
+## 5. Resolved in `/speckit.plan`
 
-- Verify Gemini's OpenAI-compatible endpoint (URL, streaming, `usage`) against current Google documentation; switch to the native API only if something essential is missing.
-- Verify how Ollama marks cloud models in `/api/tags` (tag suffix vs. remote fields) for requirement 3.
-- Routing mechanism: keep "restart `md-api` with the selected provider/model" (today's pattern) or pass the model per request. Requirement 13 only fixes the behaviour.
+- Gemini's OpenAI-compatible endpoint is confirmed (beta at Google); see plan §0.
+- Ollama cloud models are recognised by the tag `cloud` or a `-cloud` tag suffix; Ollama Cloud direct access uses `/api/chat`.
+- Routing is per request via a provider registry in `md-api`; answer-model changes no longer restart the sidecars.
 
 ## 6. Scope & Affected Components
 
