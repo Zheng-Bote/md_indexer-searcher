@@ -301,3 +301,20 @@ func TestRESTServer_Document(t *testing.T) {
 		})
 	}
 }
+
+func TestRESTServer_SendsNoCORSHeaders(t *testing.T) {
+	repo, handler := setupTestServer(t)
+	defer repo.Close()
+
+	for _, path := range []string{"/health", "/api/search?q=transactions", "/api/document", "/api/ai/ask"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("Origin", "https://evil.example")
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		for name := range rec.Header() {
+			if strings.HasPrefix(name, "Access-Control-") {
+				t.Errorf("%s: unexpected CORS header %s: %s", path, name, rec.Header().Get(name))
+			}
+		}
+	}
+}

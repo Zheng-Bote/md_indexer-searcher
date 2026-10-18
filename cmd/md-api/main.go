@@ -17,6 +17,7 @@ import (
 	"github.com/md-indexer/internal/ai/contextbuilder"
 	"github.com/md-indexer/internal/ai/provider"
 	"github.com/md-indexer/internal/api/rest"
+	"github.com/md-indexer/internal/netaddr"
 	"github.com/md-indexer/internal/repository"
 	"github.com/md-indexer/internal/search"
 	"github.com/md-indexer/internal/vaultdb"
@@ -33,7 +34,7 @@ func main() {
 	dbPath := flag.String("db", "", "Path to SQLite database (default: index database of -vault)")
 	vault := flag.String("vault", ".", "Vault whose index database is used when -db is not set")
 	port := flag.String("port", "8081", "HTTP server port")
-	host := flag.String("host", "", "HTTP bind address, e.g. 127.0.0.1 (empty listens on all interfaces)")
+	host := flag.String("host", "127.0.0.1", "HTTP bind address; use 0.0.0.0 to listen on all interfaces (no authentication)")
 	aiEnabled := flag.Bool("ai", false, "Enable AI assistant endpoint (/api/ai/ask)")
 	aiConfigFile := flag.String("ai-config", "", "Optional path to md-ai YAML configuration file")
 	ollamaHost := flag.String("ollama-host", aiCfg.OllamaHost, "Ollama API host URL")
@@ -94,13 +95,17 @@ func main() {
 		log.Info().Str("model", aiCfg.Model).Str("retriever", aiCfg.Retriever).Msg("AI Assistant endpoint /api/ai/ask enabled")
 	}
 
+	addr, exposed := netaddr.Listen(*host, *port)
+	if exposed {
+		log.Warn().Str("addr", addr).Msg("Listening on a non-loopback address: reachable from the network without authentication")
+	}
 	httpServer := &http.Server{
-		Addr:    *host + ":" + *port,
+		Addr:    addr,
 		Handler: server.Handler(),
 	}
 
 	go func() {
-		log.Info().Str("port", *port).Msg("Starting API HTTP server")
+		log.Info().Str("addr", addr).Msg("Starting API HTTP server")
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatal().Err(err).Msg("HTTP server failed")
 		}
