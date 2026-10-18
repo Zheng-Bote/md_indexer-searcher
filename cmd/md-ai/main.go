@@ -287,7 +287,7 @@ var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print md-ai version",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("md-ai v0.1.0 (local grounded RAG assistant)")
+		fmt.Println("md-ai v0.4.0 (grounded RAG assistant)")
 	},
 }
 
