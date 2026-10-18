@@ -46,7 +46,7 @@ func (r *SQLiteRepository) GetDB() *sql.DB {
 
 func migrate(db *sql.DB) error {
 	query := `
-	CREATE TABLE IF NOT EXISTS documents (id TEXT PRIMARY KEY, path TEXT UNIQUE, title TEXT, hash TEXT, modified_at DATETIME, indexed_at DATETIME);
+	CREATE TABLE IF NOT EXISTS documents (id TEXT PRIMARY KEY, path TEXT UNIQUE, title TEXT, hash TEXT, modified_at DATETIME, indexed_at DATETIME, markdown TEXT);
 	CREATE TABLE IF NOT EXISTS sections (id TEXT PRIMARY KEY, document_id TEXT, heading TEXT, level INTEGER, content TEXT, FOREIGN KEY(document_id) REFERENCES documents(id));
 	CREATE TABLE IF NOT EXISTS links (source_document_id TEXT, target_document_id TEXT, FOREIGN KEY(source_document_id) REFERENCES documents(id));
 	CREATE TABLE IF NOT EXISTS tags (id TEXT PRIMARY KEY, name TEXT UNIQUE);
@@ -78,6 +78,8 @@ func migrate(db *sql.DB) error {
 	if _, err := db.Exec(query); err != nil {
 		return err
 	}
+	// Databases built before documents.markdown get the column; the indexer re-parses rows where it is NULL.
+	_, _ = db.Exec("ALTER TABLE documents ADD COLUMN markdown TEXT")
 	// Ensure existing databases built before entities.document_id was added get the column and backfill.
 	_, _ = db.Exec("ALTER TABLE entities ADD COLUMN document_id TEXT")
 	_, _ = db.Exec("UPDATE entities SET document_id = (SELECT d.id FROM documents d WHERE d.title = entities.id COLLATE NOCASE LIMIT 1) WHERE (document_id IS NULL OR document_id = '') AND type_id != 'unresolved'")
@@ -120,7 +122,7 @@ func (r *SQLiteRepository) UpsertDocument(ctx context.Context, doc *entities.Doc
 	tx.ExecContext(ctx, "DELETE FROM entity_relations WHERE source_entity_id = ?", entID)
 
 	// 3. Insert Document data
-	tx.ExecContext(ctx, "INSERT INTO documents (id, path, title, hash, modified_at, indexed_at) VALUES (?, ?, ?, ?, ?, ?)", doc.ID, doc.Path, doc.Title, doc.Hash, doc.ModifiedAt, doc.IndexedAt)
+	tx.ExecContext(ctx, "INSERT INTO documents (id, path, title, hash, modified_at, indexed_at, markdown) VALUES (?, ?, ?, ?, ?, ?, ?)", doc.ID, doc.Path, doc.Title, doc.Hash, doc.ModifiedAt, doc.IndexedAt, doc.Markdown)
 	tx.ExecContext(ctx, "INSERT INTO fts_documents (id, title, content, tags) VALUES (?, ?, ?, ?)", doc.ID, doc.Title, doc.Content, strings.Join(doc.Tags, " "))
 
 	// Persist document metadata
@@ -305,9 +307,9 @@ func (r *SQLiteRepository) RemoveDocument(ctx context.Context, path string) erro
 }
 
 func (r *SQLiteRepository) GetDocumentByPath(ctx context.Context, path string) (*entities.Document, error) {
-	row := r.db.QueryRowContext(ctx, "SELECT id, path, hash FROM documents WHERE path = ?", path)
+	row := r.db.QueryRowContext(ctx, "SELECT id, path, hash, markdown IS NOT NULL FROM documents WHERE path = ?", path)
 	doc := &entities.Document{}
-	err := row.Scan(&doc.ID, &doc.Path, &doc.Hash)
+	err := row.Scan(&doc.ID, &doc.Path, &doc.Hash, &doc.HasMarkdown)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil

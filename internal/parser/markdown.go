@@ -60,6 +60,7 @@ func (p *Parser) ParseFile(path string) (*entities.Document, error) {
 		Path:             path,
 		Title:            title,
 		Hash:             hashStr,
+		Markdown:         string(content),
 		ModifiedAt:       stat.ModTime(),
 		IndexedAt:        time.Now(),
 		Metadata:         make(map[string]interface{}),

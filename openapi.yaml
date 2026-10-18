@@ -59,6 +59,52 @@ paths:
               schema:
                 $ref: '#/components/schemas/APIResponse'
 
+  /api/document:
+    get:
+      summary: Get Document Markdown
+      description: >
+        Returns an indexed document with its original Markdown and the outgoing wikilinks that resolve
+        to documents of the current vault. Content is served from the index only; paths that are not
+        indexed documents are rejected. Title lookup is case-insensitive; when several documents share
+        the title, the one in the same folder as `from` wins, then the shortest path, then alphabetical order.
+      parameters:
+        - in: query
+          name: path
+          schema:
+            type: string
+          description: Absolute path of an indexed document (takes precedence over `title`).
+          example: "/vault/MQTT/Broker.md"
+        - in: query
+          name: title
+          schema:
+            type: string
+          description: Wikilink target title to resolve.
+          example: "README"
+        - in: query
+          name: from
+          schema:
+            type: string
+          description: Path of the linking document, used to prefer targets in the same folder.
+      responses:
+        '200':
+          description: Document with Markdown and resolved links
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentResponse'
+        '400':
+          description: Neither `path` nor `title` given
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No indexed document matches
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /api/entities/{name}:
     get:
       summary: Get Entity by Name
@@ -221,6 +267,38 @@ components:
         error:
           type: string
           example: "invalid question payload"
+
+    DocumentResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            id:
+              type: string
+            path:
+              type: string
+              example: "/vault/MQTT/Broker.md"
+            title:
+              type: string
+              example: "Broker"
+            markdown:
+              type: string
+              example: "# Broker\n\nSee [[README]]."
+            links:
+              type: array
+              items:
+                type: object
+                properties:
+                  target:
+                    type: string
+                    example: "README"
+                  path:
+                    type: string
+                    example: "/vault/MQTT/README.md"
 
     AIModelsResponse:
       type: object

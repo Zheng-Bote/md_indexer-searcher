@@ -1,19 +1,27 @@
 // SPDX-FileCopyrightText: 2026 Zheng-Bote
 // SPDX-License-Identifier: Apache-2.0
 
-import { Component, computed, DestroyRef, inject, signal } from '@angular/core';
+import { Component, computed, DestroyRef, DOCUMENT, inject, signal } from '@angular/core';
 import { HlmAlertImports } from '@spartan-ng/helm/alert';
 import { HlmButtonImports } from '@spartan-ng/helm/button';
 import { HlmSpinnerImports } from '@spartan-ng/helm/spinner';
 import { HlmTextareaImports } from '@spartan-ng/helm/textarea';
 import { ApiClient } from '../core/api-client.service';
-import { Answer } from '../core/api.types';
+import { Answer, SourceCitation } from '../core/api.types';
 import { AnswerView, formatDuration } from './answer-view';
+import { DocumentViewer, SourceRef } from './document-viewer';
 import { WorkspaceService } from './workspace.service';
 
 @Component({
   selector: 'app-ask-panel',
-  imports: [HlmAlertImports, HlmButtonImports, HlmSpinnerImports, HlmTextareaImports, AnswerView],
+  imports: [
+    HlmAlertImports,
+    HlmButtonImports,
+    HlmSpinnerImports,
+    HlmTextareaImports,
+    AnswerView,
+    DocumentViewer,
+  ],
   template: `
     <form class="flex flex-col gap-2" (submit)="submit($event)">
       <label class="text-sm font-medium" for="question">Frage an den Vault</label>
@@ -53,14 +61,24 @@ import { WorkspaceService } from './workspace.service';
         </div>
       }
       @if (answer(); as result) {
-        <app-answer-view [answer]="result" [durationMs]="durationMs()" />
+        <app-answer-view
+          [answer]="result"
+          [durationMs]="durationMs()"
+          (sourceSelected)="openSource($event)"
+        />
       }
     </div>
+
+    <!-- The answer stays rendered underneath, so closing the viewer keeps its state and scroll position. -->
+    @if (openedSource(); as source) {
+      <app-document-viewer [source]="source" (closed)="closeSource()" />
+    }
   `,
 })
 export class AskPanel {
   private readonly api = inject(ApiClient);
   private readonly workspace = inject(WorkspaceService);
+  private readonly document = inject(DOCUMENT);
 
   protected readonly question = signal('');
   protected readonly busy = signal(false);
@@ -68,6 +86,9 @@ export class AskPanel {
   protected readonly error = signal<string | null>(null);
   /** Time of the last completed request, shown with its answer. */
   protected readonly durationMs = signal<number | null>(null);
+  protected readonly openedSource = signal<SourceRef | null>(null);
+  /** Element that opened the viewer; focus returns to it on close. */
+  private opener: HTMLElement | null = null;
   private readonly elapsedMs = signal(0);
   protected readonly elapsedLabel = computed(() => formatDuration(this.elapsedMs()));
   private timer: ReturnType<typeof setInterval> | undefined;
@@ -77,6 +98,17 @@ export class AskPanel {
 
   constructor() {
     inject(DestroyRef).onDestroy(() => clearInterval(this.timer));
+  }
+
+  protected openSource(source: SourceCitation): void {
+    this.opener = this.document.activeElement as HTMLElement | null;
+    this.openedSource.set({ path: source.path, section: source.section });
+  }
+
+  protected closeSource(): void {
+    this.openedSource.set(null);
+    this.opener?.focus();
+    this.opener = null;
   }
 
   protected onInput(event: Event): void {

@@ -17,6 +17,10 @@ type SearchEngine interface {
 	Graph(ctx context.Context, name string) ([]entities.GraphEdge, error)
 	FindEntity(ctx context.Context, name string) (*entities.Entity, error)
 	FindDocument(ctx context.Context, name string) (*entities.Document, error)
+	// Document returns the indexed document at path with its Markdown and resolved wikilinks.
+	Document(ctx context.Context, path string) (*entities.DocumentView, error)
+	// ResolveDocument resolves a wikilink title as seen from the document at from.
+	ResolveDocument(ctx context.Context, title, from string) (*entities.DocumentView, error)
 }
 
 type engineImpl struct {
@@ -43,6 +47,14 @@ func (e *engineImpl) FindEntity(ctx context.Context, name string) (*entities.Ent
 
 func (e *engineImpl) FindDocument(ctx context.Context, name string) (*entities.Document, error) {
 	return e.sRepo.FindDocumentByTitle(ctx, name)
+}
+
+func (e *engineImpl) Document(ctx context.Context, path string) (*entities.DocumentView, error) {
+	return e.sRepo.DocumentByPath(ctx, path)
+}
+
+func (e *engineImpl) ResolveDocument(ctx context.Context, title, from string) (*entities.DocumentView, error) {
+	return e.sRepo.DocumentByTitle(ctx, title, from)
 }
 
 func (e *engineImpl) Backlinks(ctx context.Context, name string) ([]string, error) {

@@ -163,3 +163,53 @@ func TestIndexerService_ForceReindexPreservesEmbeddingsAndCleansTemplates(t *tes
 		t.Errorf("Expected existing section_embeddings row to be preserved across force re-index, got %d (err=%v)", embCount, err)
 	}
 }
+
+func TestIndexerService_StoresMarkdownAndMigratesLegacyRows(t *testing.T) {
+	tempDir := t.TempDir()
+	fileA := filepath.Join(tempDir, "NoteA.md")
+	raw := "---\ntags: [demo]\n---\n# Note A\n\nSee [[NoteB|B]].\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
+	if err := os.WriteFile(fileA, []byte(raw), 0644); err != nil {
+		t.Fatalf("Failed to write NoteA: %v", err)
+	}
+
+	repo, err := repository.NewSQLiteRepository(":memory:")
+	if err != nil {
+		t.Fatalf("Failed to initialize repo: %v", err)
+	}
+	defer repo.Close()
+	ctx := context.Background()
+	db := repo.GetDB()
+
+	if err := NewIndexerService(repo, tempDir).IndexAll(ctx); err != nil {
+		t.Fatalf("IndexAll failed: %v", err)
+	}
+	var stored string
+	if err := db.QueryRow(`SELECT markdown FROM documents WHERE path = ?`, fileA).Scan(&stored); err != nil || stored != raw {
+		t.Fatalf("Expected raw Markdown to be stored unchanged, got %q (err=%v)", stored, err)
+	}
+
+	// Simulate a row written before documents.markdown existed, with an embedding for one of its sections.
+	var secID string
+	if err := db.QueryRow(`SELECT s.id FROM sections s JOIN documents d ON d.id = s.document_id WHERE d.path = ? LIMIT 1`, fileA).Scan(&secID); err != nil {
+		t.Fatalf("failed to read section id: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE documents SET markdown = NULL WHERE path = ?`, fileA); err != nil {
+		t.Fatalf("failed to clear markdown: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO section_embeddings (section_id, embedding, dimensions, model, content_hash, created_at)
+		VALUES (?, X'0000803F', 1, 'bge-m3', 'hash1', CURRENT_TIMESTAMP)`, secID); err != nil {
+		t.Fatalf("failed to seed section_embeddings: %v", err)
+	}
+
+	// Without -force the unchanged file must still be re-parsed because its Markdown is missing.
+	if err := NewIndexerService(repo, tempDir).IndexAll(ctx); err != nil {
+		t.Fatalf("second IndexAll failed: %v", err)
+	}
+	if err := db.QueryRow(`SELECT markdown FROM documents WHERE path = ?`, fileA).Scan(&stored); err != nil || stored != raw {
+		t.Errorf("Expected legacy row to be backfilled with Markdown, got %q (err=%v)", stored, err)
+	}
+	var embCount int
+	if err := db.QueryRow(`SELECT count(*) FROM section_embeddings WHERE section_id = ?`, secID).Scan(&embCount); err != nil || embCount != 1 {
+		t.Errorf("Expected section embedding to survive the backfill, got %d (err=%v)", embCount, err)
+	}
+}

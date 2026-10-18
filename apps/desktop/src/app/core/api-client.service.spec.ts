@@ -3,16 +3,16 @@
 
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { fetch } from '@tauri-apps/plugin-http';
-import { ApiClient } from './api-client.service';
+import { ApiClient, HTTP_FETCH } from './api-client.service';
 import { BackendService } from './backend.service';
 
-vi.mock('@tauri-apps/plugin-http', () => ({ fetch: vi.fn() }));
-
-const fetchMock = vi.mocked(fetch);
+const fetchMock = vi.fn<(input: string, init?: RequestInit) => Promise<Response>>();
 
 function jsonResponse(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
 }
 
 describe('ApiClient', () => {
@@ -23,7 +23,10 @@ describe('ApiClient', () => {
     fetchMock.mockReset();
     apiBaseUrl.set('http://127.0.0.1:4711');
     TestBed.configureTestingModule({
-      providers: [{ provide: BackendService, useValue: { apiBaseUrl } }],
+      providers: [
+        { provide: BackendService, useValue: { apiBaseUrl } },
+        { provide: HTTP_FETCH, useValue: fetchMock },
+      ],
     });
     client = TestBed.inject(ApiClient);
   });
@@ -42,9 +45,24 @@ describe('ApiClient', () => {
     expect(JSON.parse(init?.body as string)).toEqual({ question: 'Was ist MQTT?' });
   });
 
+  it('encodes the document path as query parameter', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, { success: true, data: { path: '/vault/A & B.md' } }),
+    );
+
+    await client.documentByPath('/vault/A & B.md');
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'http://127.0.0.1:4711/api/document?path=%2Fvault%2FA+%26+B.md',
+    );
+  });
+
   it('surfaces the md-api error message', async () => {
     fetchMock.mockResolvedValue(
-      jsonResponse(502, { success: false, error: 'failed to call ollama at http://localhost:11434/api/tags' }),
+      jsonResponse(502, {
+        success: false,
+        error: 'failed to call ollama at http://localhost:11434/api/tags',
+      }),
     );
 
     await expect(client.listModels()).rejects.toThrow('failed to call ollama');

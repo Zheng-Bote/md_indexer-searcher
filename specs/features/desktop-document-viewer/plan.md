@@ -68,18 +68,18 @@ Desktop:  AnswerView (source click) ─► AskPanel.openSource ─► DocumentVi
 
 ### D. Desktop Frontend (`apps/desktop/src/app`)
 
-1. **API (`core/api.types.ts`, `core/api-client.service.ts`):** `DocumentView`, `ResolvedLink`; `documentByPath(path)`, `documentByTitle(title, from)`.
+1. **API (`core/api.types.ts`, `core/api-client.service.ts`):** `DocumentView`, `ResolvedLink`; `documentByPath(path)`. Wikilinks carry the server-resolved path, so the viewer does not need a title lookup. The HTTP transport is injected via `HTTP_FETCH` so specs stub it through DI.
 2. **Rendering (`workspace/markdown-document.ts`, pure functions, unit-tested):**
    - `stripFrontmatter(md)`: remove a leading `---\n…\n---` block.
    - `renderDocument(md, links)`: own `Marked` instance (not the global one used by `AnswerView`) with
-     - inline extension `wikilink` for `[[Target(#Heading)?(|Alias)?]]` -> `<a href="#wiki/<encoded target>">alias|target</a>` when the normalized target is in `links` (case-insensitive), else plain text. Normalization mirrors Go `normalizeLinkTarget`.
+     - inline extension `wikilink` for `[[Target(#Heading)?(|Alias)?]]` -> `<a href="#doc/<encoded resolved path>">alias|target</a>` when the normalized target is in `links` (case-insensitive), else plain text. Normalization mirrors Go `normalizeLinkTarget`.
      - inline extension for `![[…]]` -> plain text (embeds out of scope).
      - renderer overrides: `link` (external) and `image` -> text only.
-   - Output is bound via `[innerHTML]`, so Angular's sanitizer removes scripts and event handlers (same approach as `AnswerView`). `#wiki/...` hrefs survive sanitizing.
+   - Output is bound via `[innerHTML]`, so Angular's sanitizer removes scripts and event handlers (same approach as `AnswerView`). `#doc/...` hrefs survive sanitizing.
 3. **Viewer (`workspace/document-viewer.ts`):**
    - Inputs: `source` (`{ path, section? }`); output: `closed`.
    - State: `history = signal<Entry[]>([])`, `current = signal<Entry>`, `doc = signal<DocumentView | null>`, `error`, `loading`.
-   - Click delegation on the content container: `#wiki/<target>` -> push `current`, load `documentByTitle(target, current.path)`.
+   - Click delegation on the content container: `#doc/<encoded path>` -> push `current`, load `documentByPath(path)`.
    - "Zurück": pop history or emit `closed` when empty. "Schließen" and `Esc`: emit `closed`.
    - Section jump: after render, find the first `h1`–`h6` whose trimmed text equals `section` and `scrollIntoView()`.
    - Accessibility: `role="dialog"`, `aria-modal="true"`, `aria-labelledby` the document title; focus the title on open.

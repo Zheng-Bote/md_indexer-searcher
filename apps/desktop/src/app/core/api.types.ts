@@ -43,3 +43,18 @@ export interface Answer {
   sources: SourceCitation[] | null;
   gaps?: KnowledgeGap[] | null;
 }
+
+/** Outgoing wikilink target that resolves to a document of the current vault. */
+export interface ResolvedLink {
+  target: string;
+  path: string;
+}
+
+/** Payload of GET /api/document. */
+export interface DocumentView {
+  id: string;
+  path: string;
+  title: string;
+  markdown: string;
+  links: ResolvedLink[] | null;
+}

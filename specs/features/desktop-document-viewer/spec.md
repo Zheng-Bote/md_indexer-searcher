@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 # Feature Specification: Inline Markdown Document Viewer (Desktop)
 
 **Issue:** [#22](https://github.com/Zheng-Bote/md_indexer-searcher/issues/22)  
-**Status:** Planned (`/speckit.plan`) · Decisions confirmed 2026-10-18
+**Status:** Implemented (`/speckit.implement`) · Decisions confirmed 2026-10-18
 
 ## 1. Feature Intent
 
@@ -91,7 +91,7 @@ So the original Markdown must be stored by the indexer and served by `md-api`.
 
 - [x] **Architecture:** Layering is maintained: Indexer -> Repository -> Search Engine -> `md-api` -> desktop app. The handler uses the search engine, not the DB.
 - [x] **Architecture:** The desktop app reads documents via `md-api` only; no vault or DB access from `apps/`.
-- [ ] **Architecture:** Feature affects architecture: no `md-indexer.sdd` update required.
+- [x] **Architecture:** Feature affects architecture: no `md-indexer.sdd` update required.
 - [x] **Read-Only Vault:** Markdown files are only read by the indexer, as before.
 - [x] **Security:** Rendered HTML is sanitized; the endpoint serves only indexed documents and does not touch the file system.
 - [x] **Data Model:** Additive, backwards-compatible schema change (`modernc.org/sqlite`, no CGO); the index stays rebuildable and embeddings survive the migration.
@@ -99,12 +99,12 @@ So the original Markdown must be stored by the indexer and served by `md-api`.
 
 ## 7. Acceptance Criteria
 
-- [ ] Re-indexing stores the raw Markdown; an existing index is migrated without losing embeddings.
-- [ ] `GET /api/document` returns the document by path and by title (tie-break as specified), `404` for unknown documents; covered by tests in `internal/api/rest/server_test.go` and `internal/repository`.
-- [ ] Clicking a source opens the rendered document and scrolls to the cited section.
-- [ ] Frontmatter is hidden, wikilinks render with alias, HTML is sanitized (test with `<script>` and `onerror` payloads).
-- [ ] Resolved wikilinks open other documents of the current vault; unresolved ones are not clickable.
-- [ ] "Back" walks the history back to the answer; "Close"/`Esc` returns directly; the answer is unchanged and no new request is sent.
-- [ ] Same-named documents in different folders open correctly.
-- [ ] `go test ./...`, `ng test`, `ng build` pass.
-- [ ] `README.md`, `openapi.yaml` and `CHANGELOG.md` are up-to-date.
+- [x] Re-indexing stores the raw Markdown; an existing index is migrated without losing embeddings.
+- [x] `GET /api/document` returns the document by path and by title (tie-break as specified), `404` for unknown documents; covered by tests in `internal/api/rest/server_test.go` and `internal/repository`.
+- [x] Clicking a source opens the rendered document and scrolls to the cited section.
+- [x] Frontmatter is hidden, wikilinks render with alias, HTML is sanitized (test with `<script>` and `onerror` payloads).
+- [x] Resolved wikilinks open other documents of the current vault; unresolved ones are not clickable.
+- [x] "Back" walks the history back to the answer; "Close"/`Esc` returns directly; the answer is unchanged and no new request is sent.
+- [x] Same-named documents in different folders open correctly.
+- [x] `go test ./...`, `ng test`, `ng build` pass.
+- [x] `README.md`, `openapi.yaml` and `CHANGELOG.md` are up-to-date.
