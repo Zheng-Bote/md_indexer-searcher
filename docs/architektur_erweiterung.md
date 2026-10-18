@@ -30,7 +30,7 @@ Die Architektur verfolgt folgende Ziele:
 - Wissensgraph-basierte Retrieval-Strategien inkl. Multi-Hop Reasoning Chains
 - Semantische Suche über ausschließlich lokal erzeugte Embeddings (`bge-m3`)
 - Sauber getrennte Interfaces für LLM-Generierung (`provider.LLMProvider`) und Embeddings (`embedding.Embedder`)
-- Optionale Nutzung leistungsfähiger Cloud-Modelle (Ollama Cloud, OpenRouter, Groq, NVIDIA NIM) nach expliziter Nutzerwahl
+- Optionale Nutzung leistungsfähiger Cloud-Modelle (Ollama Cloud, OpenRouter, NVIDIA NIM, Claude, Gemini) nach expliziter Nutzerwahl
 - Manuell startbare Vergleichsmessung (Lokal vs. Cloud) im grafischen Desktop-Frontend als Entscheidungsgrundlage
 - Strikter Geheimnisschutz: API-Keys ausschließlich in geschützter `.env`, zwingende Secret-Redaction vor jedem LLM-Aufruf
 - Kein stilles Routing: jeder Wechsel zwischen lokal und Cloud ist entweder vorgewählt oder explizit begründet und nachvollziehbar
@@ -134,10 +134,10 @@ Grundsatz:
                        v            v
                 +-----------+   +------------------------+
                 | Ollama    |   | Cloud-Provider         |
-                | (Lokal,   |   | OpenRouter, Groq,      |
-                |  localhost|   | NVIDIA NIM (OpenAI-    |
-                |  ohne     |   | kompatibel), Ollama    |
-                |  :cloud)  |   | Cloud / :cloud-Modelle |
+                | (Lokal,   |   | OpenRouter, NVIDIA NIM,|
+                |  localhost|   | Gemini (OpenAI-kompat.)|
+                |  ohne     |   | Claude, Ollama Cloud / |
+                |  :cloud)  |   | :cloud-Modelle         |
                 +-----------+   +------------------------+
 ```
 
@@ -150,9 +150,9 @@ Zwei strukturelle Punkte, die das Diagramm festhält:
 
 # 3. Schnittstellen-Konzept (Interface Segregation)
 
-## 3.1 LLM-Generierung (`internal/ai/provider`) — Interfaces und Ollama `[implementiert]`, Cloud-Provider `[geplant]`
+## 3.1 LLM-Generierung (`internal/ai/provider`) `[implementiert]`
 
-Die Textgenerierung ist vollständig vom Embedding-Backend entkoppelt. Heute implementiert nur der Ollama-Provider `LLMProvider`, `StreamingLLMProvider` und `ModelLister`. Die Cloud-Provider aus #24 (ein OpenAI-kompatibler Provider für OpenRouter, Groq und NVIDIA NIM; API-Key-Unterstützung im Ollama-Provider für Ollama Cloud) implementieren dieselben Interfaces:
+Die Textgenerierung ist vollständig vom Embedding-Backend entkoppelt. Alle Provider implementieren `LLMProvider` und `StreamingLLMProvider`: Ollama (lokal und Ollama Cloud), der OpenAI-kompatible Provider (OpenRouter, NVIDIA NIM, Gemini) und Claude (#24). Die Provider-Registry implementiert `ModelLister` und löst Modellreferenzen auf:
 
 ```go
 type LLMProvider interface {
@@ -200,21 +200,21 @@ Ein `RoutingProvider`, der selbst entscheidet, ob lokal oder in der Cloud generi
 
 # 4. Sicherheitsarchitektur
 
-## 4.1 API-Keys und `.env` `[Blocker]` (`.gitignore` `[implementiert]`)
+## 4.1 API-Keys und `.env` `[implementiert]` (#24)
 
 Gemäß `md-indexer.sdd` und den Entscheidungen in Issue #24 gilt:
 
-- md_indexer nutzt eine **eigene `.env` im Format von `ai_txt-system`** und liest nicht dessen `private.env`: je Anbieter `<PROVIDER>_API_KEY`, `<PROVIDER>_ENDPOINT` und die angebotenen Modelle als `<PROVIDER>_LLM_01 … _LLM_nn` (Anbieter: `OLLAMA` für Ollama Cloud, `OPENROUTER`, `GROQ`, `NVIDIA`).
-- Keys kommen ausschließlich aus der Prozessumgebung oder dieser `.env`. An Sidecars werden sie per Umgebungsvariable übergeben.
+- md_indexer nutzt eine **eigene `.env` im Format von `ai_txt-system`** und liest nicht dessen `private.env`: je Anbieter `<PROVIDER>_API_KEY`, `<PROVIDER>_ENDPOINT` und die angebotenen Modelle als `<PROVIDER>_LLM_01 … _LLM_nn` (Anbieter: `OLLAMA` für Ollama Cloud, `OPENROUTER`, `NVIDIA`, `CLAUDE`, `GEMINI`; ein Key `none` deaktiviert den Anbieter, Groq wird nicht unterstützt).
+- Keys kommen ausschließlich aus der Prozessumgebung oder dieser `.env`, gelesen von `md-api`/`md-ai` selbst. Die Desktop-App kennt nur den Pfad der Datei und übergibt ihn als `MD_AI_ENV_FILE`; Keys laufen nie durch die App oder `settings.json`.
 - **Verboten:** Übergabe per CLI-Argument (`--api-key`), Ausgabe in Logs, Rückgabe in HTTP-Responses.
 - Gegenüber dem Desktop-Frontend meldet `md-api` lediglich Metadaten (Anbieter, Modellnamen, Einstufung lokal/Cloud), nie Keys.
 
-Stand und verbleibende Arbeit:
+Umsetzung (#24):
 
-- **`.gitignore`** `[implementiert]` (Commit `abdb0a9`): `.env`, `.env.*` und `/data/.env*` werden ignoriert. Eine committete `example.env` dokumentiert das Format (Name bewusst nicht `.env.example`, weil `.env.*` diese Datei ignorieren würde).
-- **Loader existiert nicht.** Im Code gibt es keinen `.env`-Parser. Zu bauen ist ein Loader mit definierter Präzedenz: `Prozessumgebung > .env > md-ai.yaml > Defaults`. Explizite Umgebung gewinnt immer, damit Container- und CI-Betrieb funktioniert.
-- **Dateirechte.** `.env` wird mit `0600` angelegt; der Loader warnt, wenn die Datei für Gruppe oder Andere lesbar ist.
-- **Ort der Datei** (laut #24 konfigurierbar über Desktop-Settings, CLI-Flag und Umgebungsvariable). Vorschlag für den Default: `~/.config/md-indexer/.env`, überschreibbar mit `MD_AI_ENV_FILE`. Nicht hart auf ein Fremd-Repository verdrahten.
+- **`.gitignore`** (Commit `abdb0a9`): `.env`, `.env.*` und `/data/.env*` werden ignoriert; das Format dokumentiert die committete `example.env` (bewusst nicht `.env.example`, weil `.env.*` sie ignorieren würde).
+- **Loader** (`internal/ai/config/envfile.go`): `KEY=VALUE`, Kommentare, `export`, Anführungszeichen; Präzedenz `Prozessumgebung > .env > md-ai.yaml > Defaults`.
+- **Dateirechte:** Die Werkzeuge warnen (nur mit Pfad), wenn die Datei für Gruppe oder Andere lesbar ist.
+- **Ort:** `-env-file` / `--env-file`, sonst `MD_AI_ENV_FILE`, sonst `~/.config/md-indexer/.env`; in der Desktop-App als Einstellung „Cloud-Anbieter (.env)“.
 
 ## 4.2 Secret-Redaction und ihre Grenzen `[implementiert]`
 
@@ -270,7 +270,7 @@ Vorzusehen:
 
 Jede Anfrage wird standardmäßig lokal verarbeitet.
 
-**„Lokal“ ist eine Eigenschaft des Modells, nicht des Providers.** Der lokale Ollama-Daemon leitet Cloud-Modelle (Suffix `:cloud`) an ollama.com weiter; sie erscheinen auch in `/api/tags` und damit in der Modellauswahl. Dazu kommt Ollama Cloud direkt per API-Key (#24). Als lokal gilt daher nur ein Modell, das über einen Ollama-Host auf `localhost`/`127.0.0.1` läuft und kein `:cloud`-Modell ist. Diese Einstufung steuert `local_only`, die Zustimmung (4.2) und das Cloud-Badge im Frontend `[geplant]`.
+**„Lokal“ ist eine Eigenschaft des Modells, nicht des Providers.** Der lokale Ollama-Daemon leitet Cloud-Modelle (Suffix `:cloud`) an ollama.com weiter; sie erscheinen auch in `/api/tags` und damit in der Modellauswahl. Dazu kommt Ollama Cloud direkt per API-Key (#24). Als lokal gilt daher nur ein Modell, das über einen Ollama-Host auf `localhost`/`127.0.0.1` läuft und kein `:cloud`-Modell ist. Diese Einstufung steuert die Zustimmung (4.2) und das Cloud-Badge im Frontend `[implementiert]` (#24) sowie künftig `local_only` `[geplant]`.
 
 Anwendungsfälle:
 
@@ -316,16 +316,18 @@ temperature: 0.1
 max_context_tokens: 4000
 ```
 
-## 5.2 Cloud-Provider (Issue #24) `[geplant]`
+## 5.2 Cloud-Provider (Issue #24) — Stufe 1 `[implementiert]`
 
 Werden ausschließlich genutzt, wenn der Anwender ein Cloud-Modell auswählt (Desktop-Modellauswahl, CLI-Flag) bzw. später über den Ausführungsmodus (`auto_context`, `cloud_only`) oder eine Vergleichsmessung.
 
-### Stufe 1: Manuelle Modellwahl (Issue #24, beschlossen)
+### Stufe 1: Manuelle Modellwahl (Issue #24) `[implementiert]`
 
-- Ein **OpenAI-kompatibler Provider** (`/chat/completions`, `Authorization: Bearer`) deckt OpenRouter, Groq und NVIDIA NIM ab; der Ollama-Provider erhält einen optionalen API-Key für Ollama Cloud.
-- Die **Modellliste** kommt aus der `.env` (`<PROVIDER>_LLM_xx`), nicht aus `/models` der Anbieter (OpenRouter listet mehrere hundert Modelle). Das Frontend gruppiert nach Anbieter und kennzeichnet Cloud-Modelle sichtbar.
-- **Kontextbudget pro Provider:** `max_context_tokens: 4000` ist auf lokale CPU-Inferenz abgestimmt; Cloud-Modelle erhalten ein eigenes, größeres Budget.
-- **Fehler:** HTTP 401/429 werden als verständliche Meldung angezeigt.
+- **Provider:** ein OpenAI-kompatibler Provider (`/chat/completions`, Bearer, Streaming mit `usage`) für OpenRouter, NVIDIA NIM und Gemini (Googles OpenAI-kompatibler Endpoint, bei Google noch Beta); Ollama Cloud über den Ollama-Provider mit Bearer-Key und `/api/chat`; Claude über das offizielle Go-SDK (`anthropic-sdk-go`, Messages API, Streaming, Effort pro Modell, Default `medium`). Groq ist entfallen.
+- **Routing pro Anfrage:** `md-api` baut beim Start eine Provider-Registry; `POST /api/ai/ask` nimmt optional `model: {provider, name}`. Ein Wechsel des Antwortmodells startet keine Sidecars neu.
+- **Modellliste:** lokale Ollama-Modelle (klassifiziert nach Generierung/Embedding und lokal/Cloud, mit Parametergröße) plus die Modelle aus der `.env` (`<PROVIDER>_LLM_xx`), nicht aus `/models` der Anbieter. Das Frontend gruppiert „Lokal“ (nach Größe sortiert) und „Cloud · <Anbieter>“; Embedding-Modelle erscheinen nur in der Embedding-Auswahl.
+- **Budgets:** `cloud_max_context_tokens` (16.000), `cloud_max_tokens` (16.000; bei Claude zählt das Thinking mit), `cloud_timeout_seconds` (180).
+- **Fehler:** typisiert (`auth`, `rate_limit`, `refusal`, `truncated`, `timeout`, `unavailable`), HTTP 502 mit `error_kind`, spezifische Meldung im Frontend; kein Ausweichen auf andere Anbieter oder lokal. Bei Claude Opus/Sonnet 5.5 ist Anthropics serverseitiger Refusal-Fallback aktiv (anderes Claude-Modell im selben Aufruf); die Antwort nennt das tatsächlich antwortende Modell.
+- **Transparenz:** Zustimmung vor der ersten Frage je Cloud-Anbieter und App-Lauf; Antworten tragen `provider`, `locality` und das Badge „Lokal“ / „Cloud · <Anbieter>“.
 - Retrieval und Embeddings bleiben lokal.
 
 ### Stufe 2: Deklarative Modellstrategie für `auto_context` `[offen]`
@@ -351,7 +353,7 @@ Zu beachten:
 
 - Die Modell-IDs sind Beispiele und veralten. Beim Start wird gegen die Modellliste des Providers validiert; ein unbekannter Name erzeugt eine klare Fehlermeldung statt eines 404 zur Laufzeit.
 - Reasoning-Modelle wie `deepseek-r1` erzeugen lange Zwischenausgaben. Latenz und Kosten sind deshalb Teil der Messung (Abschnitt 7) und nicht vorab anzunehmen.
-- `max_cost_usd_per_request` und `max_cost_usd_per_day` sind für **kostenpflichtige** Modelle Pflichtfelder; ohne sie ist `cloud_only` ein unkontrollierter Kostenpfad. Für die in der `.env` gelisteten Free-Tier-Modelle (OpenRouter `:free`, Groq, NVIDIA-Credits) sind Rate-Limits der relevante Grenzwert `[offen]`.
+- `max_cost_usd_per_request` und `max_cost_usd_per_day` sind für **kostenpflichtige** Modelle Pflichtfelder; ohne sie ist `cloud_only` ein unkontrollierter Kostenpfad. Für die in der `.env` gelisteten Free-Tier-Modelle (OpenRouter `:free`, NVIDIA-Credits) sind Rate-Limits der relevante Grenzwert `[offen]`.
 
 ---
 
@@ -404,7 +406,7 @@ Phase 2 (nur bei Eskalation auf Cloud):
 
 ## 6.3 `cloud_only` `[geplant]`
 
-- Alle LLM-Antworten werden über das gewählte Cloud-Modell generiert (Ollama Cloud, OpenRouter, Groq oder NVIDIA NIM).
+- Alle LLM-Antworten werden über das gewählte Cloud-Modell generiert (Ollama Cloud, OpenRouter, NVIDIA NIM, Claude oder Gemini).
 - Retrieval und Embedding-Berechnung (`bge-m3`) laufen weiterhin zu 100 % lokal.
 - Alle Kontextblöcke durchlaufen `RedactSecrets`, die Payload-Obergrenze und die Sitzungszustimmung aus 4.2.
 
@@ -634,7 +636,7 @@ Komponenten:
 Modelle:
 
 - Lokal: `qwen3:14b` (Default), `qwen3:32b` optional (siehe Messung in 5.1); Embeddings: `bge-m3`
-- Optional Cloud (Ollama Cloud, OpenRouter, Groq, NVIDIA NIM) via `.env` (#24) — zunächst manuell gewählt, später für Vergleichsmessungen, `auto_context` oder `cloud_only`.
+- Optional Cloud (Ollama Cloud, OpenRouter, NVIDIA NIM, Claude, Gemini) via `.env` (#24) — manuell gewählt `[implementiert]`, später für Vergleichsmessungen, `auto_context` oder `cloud_only`.
 
 ## 11.2 Laptop (16 GB RAM)
 
@@ -695,28 +697,25 @@ Zusätzlich: ein Log-Eintrag pro Anfrage mit Provider, Modus, Plan, Token-Zahlen
 
 **Blocker (vor jeder Umsetzung zu klären):**
 
-1. `.env`-Loader mit Präzedenz und Dateirechten (4.1). Die `.gitignore`-Regel ist erledigt.
-2. Authentifizierung für remote `md-api`: Bearer-Token oder mTLS, plus Spec-Update in `md-indexer.sdd` (4.3).
+1. Authentifizierung für remote `md-api`: Bearer-Token oder mTLS, plus Spec-Update in `md-indexer.sdd` (4.3).
 
 **Offene Designentscheidungen:**
 
-3. Einstufung lokal/Cloud pro Modell (localhost-Host, kein `:cloud`-Modell) als Grundlage für `local_only`, Zustimmung und Badge (5.1).
-4. `BuildResult` mit `TotalTokens` und `Truncated` — Signaturänderung in `internal/ai/contextbuilder`.
-5. Zweiphasige Context-Budgetierung für `auto_context` — `RetrievalResult` hält `cloud_max_results` Kandidaten vor; `ContextBuilder` budgetiert bei Eskalation mit dem Cloud-Budget nach (ohne zweites DB-/Embedding-Retrieval).
-6. GraphDepth-Schwellwert gegen die Planner-Kappung — Default anheben oder Schwelle relativ zu `cfg.GraphDepth` setzen.
-7. Fail-closed bei Ollama-Ausfall — bestätigen, dass keine Eskalation stattfindet.
-8. Embedding-Modellwechsel-Warnung für CLI/Standalone (`md-ai` / `md-api`) — prüfen, ob für `cfg.EmbeddingModel` Einträge in `section_embeddings` vorliegen (in der Desktop-App bereits durch den vorgeschalteten `md-indexer`-Lauf gelöst).
-9. `impact` ohne Vektoren — Planner evaluieren.
-10. `break` vs. `continue` im Token-Budget — Verhalten festlegen und dokumentieren.
-11. Kostenlimits nur für kostenpflichtige Modelle; Rate-Limit-Behandlung für Free-Tier-Modelle (5.2).
+2. `BuildResult` mit `TotalTokens` und `Truncated` — Signaturänderung in `internal/ai/contextbuilder`.
+3. Zweiphasige Context-Budgetierung für `auto_context` — `RetrievalResult` hält `cloud_max_results` Kandidaten vor; `ContextBuilder` budgetiert bei Eskalation mit dem Cloud-Budget nach (ohne zweites DB-/Embedding-Retrieval).
+4. GraphDepth-Schwellwert gegen die Planner-Kappung — Default anheben oder Schwelle relativ zu `cfg.GraphDepth` setzen.
+5. Fail-closed bei Ollama-Ausfall — bestätigen, dass keine Eskalation stattfindet.
+6. Embedding-Modellwechsel-Warnung für CLI/Standalone (`md-ai` / `md-api`) — prüfen, ob für `cfg.EmbeddingModel` Einträge in `section_embeddings` vorliegen (in der Desktop-App bereits durch den vorgeschalteten `md-indexer`-Lauf gelöst).
+7. `impact` ohne Vektoren — Planner evaluieren.
+8. `break` vs. `continue` im Token-Budget — Verhalten festlegen und dokumentieren.
+9. Kostenlimits nur für kostenpflichtige Modelle; Rate-Limit-Behandlung für Free-Tier-Modelle (5.2).
 
 **Geplant, aber noch nicht vorhanden:**
 
-12. Cloud-Provider und Modellauswahl nach Issue #24 (OpenAI-kompatibler Provider, Ollama-Cloud-Key, `.env`-Modellliste, Cloud-Badge, verständliche 401/429-Fehler).
-13. `POST /api/ai/compare` inklusive Schema in `openapi.yaml` (Standard `runs = 1` mit separater Ausweisung von Ollama `load_ms` / `prefill_ms` / `eval_ms`; optional `runs = 3` mit Median).
-14. Token- und Kostenfelder in `model.Answer` (`context_tokens`, `cost_usd`, `provider`, `locality`, `execution_mode`, `escalation_reason`).
+10. `POST /api/ai/compare` inklusive Schema in `openapi.yaml` (Standard `runs = 1` mit separater Ausweisung von Ollama `load_ms` / `prefill_ms` / `eval_ms`; optional `runs = 3` mit Median).
+11. Token- und Kostenfelder in `model.Answer` (`context_tokens`, `cost_usd`, `execution_mode`, `escalation_reason`); `provider` und `locality` sind seit #24 vorhanden.
 
-**Erledigt seit der ersten Fassung:** vault-lokale Index-DB inkl. `md-ai --vault` (#23), Sync-Hinweis in der README, `.gitignore` für `.env`, Original-Markdown im Index (#22), pfadbasierte Dokument-IDs (#29), Loopback-Default und kein Wildcard-CORS (#31).
+**Erledigt seit der ersten Fassung:** vault-lokale Index-DB inkl. `md-ai --vault` (#23), Sync-Hinweis in der README, Original-Markdown im Index (#22), pfadbasierte Dokument-IDs (#29), Loopback-Default und kein Wildcard-CORS (#31), `.env`-Loader, Cloud-Provider mit manueller Modellwahl und Einstufung lokal/Cloud pro Modell (#24).
 
 ---
 

@@ -18,8 +18,9 @@ export interface BackendStatus {
 
 export interface BackendConfig {
   vault: string;
-  model: string | null;
   embeddingModel: string | null;
+  /** Path of md_indexer's .env; md-api reads the cloud API keys from it. */
+  envFile: string | null;
 }
 
 const IDLE: BackendStatus = { state: 'idle', vault: null, apiBaseUrl: null, message: null, logTail: [] };

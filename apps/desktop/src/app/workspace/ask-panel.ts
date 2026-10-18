@@ -6,10 +6,11 @@ import { HlmAlertImports } from '@spartan-ng/helm/alert';
 import { HlmButtonImports } from '@spartan-ng/helm/button';
 import { HlmSpinnerImports } from '@spartan-ng/helm/spinner';
 import { HlmTextareaImports } from '@spartan-ng/helm/textarea';
-import { ApiClient } from '../core/api-client.service';
-import { Answer, SourceCitation } from '../core/api.types';
+import { ApiClient, ApiError } from '../core/api-client.service';
+import { Answer, ProviderErrorKind, SourceCitation } from '../core/api.types';
 import { AnswerView, formatDuration } from './answer-view';
 import { DocumentViewer, SourceRef } from './document-viewer';
+import { providerLabel } from './model-options';
 import { WorkspaceService } from './workspace.service';
 
 @Component({
@@ -48,8 +49,36 @@ import { WorkspaceService } from './workspace.service';
       </div>
     </form>
 
+    @if (pendingConsent(); as provider) {
+      <div
+        hlmAlert
+        role="alertdialog"
+        aria-labelledby="consent-title"
+        aria-describedby="consent-text"
+        class="mt-4"
+      >
+        <h3 hlmAlertTitle id="consent-title">Frage an {{ provider }} senden?</h3>
+        <p hlmAlertDescription id="consent-text">
+          Für die Antwort werden Auszüge aus deinem Vault an {{ provider }} übertragen. Die
+          Zustimmung gilt, bis die App geschlossen wird.
+        </p>
+        <div class="mt-3 flex gap-2">
+          <button hlmBtn size="sm" type="button" (click)="confirmCloud()">Senden</button>
+          <button
+            hlmBtn
+            variant="outline"
+            size="sm"
+            type="button"
+            (click)="pendingConsent.set(null)"
+          >
+            Abbrechen
+          </button>
+        </div>
+      </div>
+    }
+
     <div class="mt-6 flex flex-col gap-4" aria-live="polite">
-      @if (busy()) {
+      @if (busy() && !cloudProvider()) {
         <p class="text-muted-foreground text-sm">
           Auf CPU kann die Antwort mehrere Minuten dauern.
         </p>
@@ -95,6 +124,19 @@ export class AskPanel {
   protected readonly canAsk = computed(
     () => this.workspace.ready() && !this.busy() && this.question().trim().length > 0,
   );
+  /** Display name of the selected answer model's provider if that model runs in the cloud. */
+  protected readonly cloudProvider = computed(() => {
+    const ref = this.workspace.settings().answerModel;
+    if (!ref) {
+      return null;
+    }
+    const info = this.workspace
+      .models()
+      .find((m) => (m.provider ?? 'ollama') === ref.provider && m.name === ref.name);
+    return info?.locality === 'cloud' ? providerLabel(ref.provider, ref.name) : null;
+  });
+  /** Provider waiting for the user's consent before the question is sent. */
+  protected readonly pendingConsent = signal<string | null>(null);
 
   constructor() {
     inject(DestroyRef).onDestroy(() => clearInterval(this.timer));
@@ -120,6 +162,25 @@ export class AskPanel {
     if (!this.canAsk()) {
       return;
     }
+    const cloud = this.cloudProvider();
+    if (cloud && !this.workspace.cloudConsent().has(cloud)) {
+      this.pendingConsent.set(cloud);
+      return;
+    }
+    await this.send();
+  }
+
+  protected async confirmCloud(): Promise<void> {
+    const provider = this.pendingConsent();
+    if (!provider) {
+      return;
+    }
+    this.workspace.grantCloudConsent(provider);
+    this.pendingConsent.set(null);
+    await this.send();
+  }
+
+  private async send(): Promise<void> {
     this.busy.set(true);
     this.error.set(null);
     this.answer.set(null);
@@ -128,16 +189,37 @@ export class AskPanel {
     this.elapsedMs.set(0);
     this.timer = setInterval(() => this.elapsedMs.set(performance.now() - startedAt), 1000);
     try {
-      const answer = await this.api.ask(this.question().trim());
+      const answer = await this.api.ask(
+        this.question().trim(),
+        this.workspace.settings().answerModel,
+      );
       this.durationMs.set(performance.now() - startedAt);
       this.answer.set(answer);
     } catch (err) {
       this.error.set(
-        `${err instanceof Error ? err.message : String(err)} (nach ${formatDuration(performance.now() - startedAt)} min)`,
+        `${describeError(err)} (nach ${formatDuration(performance.now() - startedAt)} min)`,
       );
     } finally {
       clearInterval(this.timer);
       this.busy.set(false);
     }
   }
+}
+
+const ERROR_LABELS: Record<ProviderErrorKind, string> = {
+  auth: 'API-Key ungültig oder ohne Berechtigung',
+  rate_limit: 'Rate-Limit erreicht, bitte später erneut versuchen',
+  refusal: 'Anfrage vom Modell abgelehnt',
+  truncated: 'Antwort abgeschnitten (Ausgabelimit erreicht)',
+  timeout: 'Zeitüberschreitung',
+  unavailable: 'Anbieter nicht erreichbar',
+};
+
+/** Turns provider failures into a specific message; the raw md-api error stays as detail. */
+export function describeError(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  if (err instanceof ApiError && err.kind) {
+    return `${ERROR_LABELS[err.kind]}: ${message}`;
+  }
+  return message;
 }

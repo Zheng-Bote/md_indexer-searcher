@@ -3,13 +3,14 @@
 
 import { computed, effect, inject, Service, signal } from '@angular/core';
 import { ApiClient } from '../core/api-client.service';
-import { ModelInfo } from '../core/api.types';
+import { ModelInfo, ModelRef } from '../core/api.types';
 import { BackendService } from '../core/backend.service';
 import { AppSettings, EMPTY_SETTINGS, SettingsService } from '../core/settings.service';
 
 /**
- * Keeps the selected vault and models, persists them, and restarts the backend whenever
- * they change.
+ * Keeps the selected vault and models, persists them, and restarts the backend when the vault,
+ * the embedding model or the .env file change. The answer model is sent with every question,
+ * so changing it needs no restart.
  */
 @Service()
 export class WorkspaceService {
@@ -20,11 +21,14 @@ export class WorkspaceService {
   private readonly _settings = signal<AppSettings>(EMPTY_SETTINGS);
   private readonly _models = signal<ModelInfo[]>([]);
   private readonly _modelsError = signal<string | null>(null);
+  /** Cloud providers the user agreed to send vault excerpts to; kept until the app closes. */
+  private readonly _cloudConsent = signal<ReadonlySet<string>>(new Set());
 
   readonly settings = this._settings.asReadonly();
   /** Last successfully loaded model list; kept while the backend restarts. */
   readonly models = this._models.asReadonly();
   readonly modelsError = this._modelsError.asReadonly();
+  readonly cloudConsent = this._cloudConsent.asReadonly();
   readonly status = this.backend.status;
   readonly ready = computed(() => this.status().state === 'ready');
 
@@ -42,7 +46,7 @@ export class WorkspaceService {
     const saved = await this.settingsStore.load();
     this._settings.set(saved);
     if (saved.vault && this.status().state === 'idle') {
-      await this.backend.applyConfig({ ...saved, vault: saved.vault });
+      await this.backend.applyConfig(this.backendConfig(saved, saved.vault));
     }
   }
 
@@ -50,12 +54,24 @@ export class WorkspaceService {
     return this.update({ vault });
   }
 
-  selectModel(model: string): Promise<void> {
-    return this.update({ model });
+  /** Persists the answer model; no restart, it is sent with every question. */
+  async selectAnswerModel(answerModel: ModelRef): Promise<void> {
+    const next = { ...this._settings(), answerModel };
+    this._settings.set(next);
+    await this.settingsStore.save(next);
   }
 
   selectEmbeddingModel(embeddingModel: string | null): Promise<void> {
     return this.update({ embeddingModel });
+  }
+
+  selectEnvFile(envFile: string | null): Promise<void> {
+    return this.update({ envFile });
+  }
+
+  /** Records that vault excerpts may be sent to `provider` until the app closes. */
+  grantCloudConsent(provider: string): void {
+    this._cloudConsent.update((granted) => new Set(granted).add(provider));
   }
 
   private async update(patch: Partial<AppSettings>): Promise<void> {
@@ -63,8 +79,12 @@ export class WorkspaceService {
     this._settings.set(next);
     await this.settingsStore.save(next);
     if (next.vault) {
-      await this.backend.applyConfig({ ...next, vault: next.vault });
+      await this.backend.applyConfig(this.backendConfig(next, next.vault));
     }
+  }
+
+  private backendConfig(settings: AppSettings, vault: string) {
+    return { vault, embeddingModel: settings.embeddingModel, envFile: settings.envFile };
   }
 
   private async refreshModels(): Promise<void> {
@@ -72,10 +92,13 @@ export class WorkspaceService {
       const { models, active } = await this.api.listModels();
       this._models.set(models);
       this._modelsError.set(null);
-      // On first start md-api runs with its configured default model; adopt it without a restart.
+      // On first start adopt md-api's default local model as answer model.
       const current = this._settings();
-      if (!current.model && active.model) {
-        const next = { ...current, model: active.model };
+      if (!current.answerModel && active.model) {
+        const next: AppSettings = {
+          ...current,
+          answerModel: { provider: 'ollama', name: active.model },
+        };
         this._settings.set(next);
         await this.settingsStore.save(next);
       }

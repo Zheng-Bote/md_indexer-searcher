@@ -3,9 +3,10 @@
 
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ApiClient } from '../core/api-client.service';
-import { Answer } from '../core/api.types';
-import { AskPanel } from './ask-panel';
+import { ApiClient, ApiError } from '../core/api-client.service';
+import { Answer, ModelInfo, ModelRef } from '../core/api.types';
+import { EMPTY_SETTINGS } from '../core/settings.service';
+import { AskPanel, describeError } from './ask-panel';
 import { WorkspaceService } from './workspace.service';
 
 const answer = (text: string): Answer => ({
@@ -21,9 +22,24 @@ describe('AskPanel', () => {
   let ask: ReturnType<typeof vi.fn>;
   let fixture: ComponentFixture<AskPanel>;
   let el: HTMLElement;
+  let answerModel: ReturnType<typeof signal<ModelRef | null>>;
+  let consent: ReturnType<typeof signal<ReadonlySet<string>>>;
+  const models = signal<ModelInfo[]>([
+    { name: 'qwen3:14b', size: 1, provider: 'ollama', locality: 'local', kind: 'generation' },
+    {
+      name: 'claude-opus-5-5',
+      size: 0,
+      provider: 'claude',
+      provider_name: 'Claude',
+      locality: 'cloud',
+      kind: 'generation',
+    },
+  ]);
 
   beforeEach(() => {
     ask = vi.fn();
+    answerModel = signal<ModelRef | null>(null);
+    consent = signal<ReadonlySet<string>>(new Set());
     TestBed.configureTestingModule({
       providers: [
         {
@@ -39,7 +55,16 @@ describe('AskPanel', () => {
             })),
           },
         },
-        { provide: WorkspaceService, useValue: { ready: signal(true) } },
+        {
+          provide: WorkspaceService,
+          useValue: {
+            ready: signal(true),
+            models,
+            settings: () => ({ ...EMPTY_SETTINGS, answerModel: answerModel() }),
+            cloudConsent: consent,
+            grantCloudConsent: (p: string) => consent.update((c) => new Set(c).add(p)),
+          },
+        },
       ],
     });
     fixture = TestBed.createComponent(AskPanel);
@@ -115,5 +140,54 @@ describe('AskPanel', () => {
     expect(el.textContent).toContain('Alte Antwort');
     expect(ask).toHaveBeenCalledTimes(1);
     expect(document.activeElement).toBe(el.querySelector('app-answer-view li button'));
+  });
+
+  it('asks for consent before the first question to a cloud model and sends the model along', async () => {
+    answerModel.set({ provider: 'claude', name: 'claude-opus-5-5' });
+    ask.mockResolvedValue({ ...answer('Cloud-Antwort'), provider: 'claude', locality: 'cloud' });
+
+    await submit('erste Frage');
+    expect(ask).not.toHaveBeenCalled();
+    expect(el.querySelector('[role="alertdialog"]')?.textContent).toContain('Claude');
+
+    (
+      Array.from(el.querySelectorAll('[role="alertdialog"] button')).find(
+        (b) => b.textContent?.trim() === 'Senden',
+      ) as HTMLButtonElement
+    ).click();
+    await settle();
+    expect(ask).toHaveBeenCalledWith('erste Frage', {
+      provider: 'claude',
+      name: 'claude-opus-5-5',
+    });
+    expect(el.textContent).toContain('Cloud · Claude');
+
+    await submit('zweite Frage');
+    await settle();
+    expect(ask).toHaveBeenCalledTimes(2);
+    expect(el.querySelector('[role="alertdialog"]')).toBeNull();
+  });
+
+  it('sends local questions without consent', async () => {
+    answerModel.set({ provider: 'ollama', name: 'qwen3:14b' });
+    ask.mockResolvedValue(answer('lokal'));
+
+    await submit('Frage');
+    await settle();
+
+    expect(ask).toHaveBeenCalledWith('Frage', { provider: 'ollama', name: 'qwen3:14b' });
+    expect(el.textContent).toContain('Lokal');
+  });
+
+  it('describes provider errors specifically', () => {
+    expect(
+      describeError(new ApiError('openrouter: rate_limit (HTTP 429): slow down', 'rate_limit')),
+    ).toBe(
+      'Rate-Limit erreicht, bitte später erneut versuchen: openrouter: rate_limit (HTTP 429): slow down',
+    );
+    expect(
+      describeError(new ApiError('claude: refusal: request declined (category: cyber)', 'refusal')),
+    ).toContain('Anfrage vom Modell abgelehnt');
+    expect(describeError(new Error('Backend ist nicht bereit.'))).toBe('Backend ist nicht bereit.');
   });
 });

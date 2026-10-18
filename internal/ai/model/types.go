@@ -126,11 +126,34 @@ type GenerateResponse struct {
 	OutputTokens int    `json:"output_tokens,omitempty"`
 }
 
-// ModelInfo describes a model installed in the LLM backend.
+// Model localities: local models run on this machine, cloud models send the prompt to a provider.
+const (
+	LocalityLocal = "local"
+	LocalityCloud = "cloud"
+)
+
+// Model kinds: generation models answer questions, embedding models vectorise sections.
+const (
+	KindGeneration = "generation"
+	KindEmbedding  = "embedding"
+)
+
+// ModelInfo describes a model offered by an LLM backend.
 type ModelInfo struct {
-	Name   string `json:"name"`
-	Size   int64  `json:"size"`
-	Family string `json:"family,omitempty"`
+	Name          string `json:"name"`
+	Size          int64  `json:"size"`
+	Family        string `json:"family,omitempty"`
+	Provider      string `json:"provider,omitempty"`
+	ProviderName  string `json:"provider_name,omitempty"`
+	Locality      string `json:"locality,omitempty"`
+	Kind          string `json:"kind,omitempty"`
+	ParameterSize string `json:"parameter_size,omitempty"`
+}
+
+// ModelRef selects a model of a provider for one request.
+type ModelRef struct {
+	Provider string `json:"provider"`
+	Name     string `json:"name"`
 }
 
 // SourceCitation represents a cited document or section in the answer.
@@ -147,6 +170,8 @@ type Answer struct {
 	Intent   Intent             `json:"intent"`
 	Plan     *RetrievalPlanInfo `json:"plan,omitempty"`
 	Model    string             `json:"model"`
+	Provider string             `json:"provider,omitempty"`
+	Locality string             `json:"locality,omitempty"`
 	Sources  []SourceCitation   `json:"sources"`
 	Gaps     []KnowledgeGap     `json:"gaps,omitempty"`
 }

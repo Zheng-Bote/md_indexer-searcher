@@ -4,11 +4,13 @@ package rest
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/md-indexer/internal/ai/assistant"
+	"github.com/md-indexer/internal/ai/model"
 	"github.com/md-indexer/internal/ai/provider"
 	"github.com/md-indexer/internal/entities"
 	"github.com/md-indexer/internal/search"
@@ -42,6 +44,27 @@ func (s *Server) WithModelLister(l provider.ModelLister, active ActiveModels) *S
 	s.modelLister = l
 	s.activeModels = active
 	return s
+}
+
+// respondAskError maps unknown models to 400 and classified provider failures to 502 with an error_kind,
+// so clients can show a specific message. Other errors stay 500.
+func respondAskError(w http.ResponseWriter, err error) {
+	var unknown *provider.ErrUnknownModel
+	var perr *provider.Error
+	status, kind := http.StatusInternalServerError, ""
+	switch {
+	case errors.As(err, &unknown):
+		status = http.StatusBadRequest
+	case errors.As(err, &perr):
+		status, kind = http.StatusBadGateway, perr.Kind
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	body := map[string]interface{}{"success": false, "error": err.Error()}
+	if kind != "" {
+		body["error_kind"] = kind
+	}
+	json.NewEncoder(w).Encode(body)
 }
 
 func respondJSON(w http.ResponseWriter, data interface{}, err error) {
@@ -128,14 +151,19 @@ func (s *Server) Handler() http.Handler {
 			return
 		}
 		var req struct {
-			Question string `json:"question"`
+			Question string          `json:"question"`
+			Model    *model.ModelRef `json:"model,omitempty"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Question == "" {
 			http.Error(w, `{"success":false,"error":"invalid question payload"}`, http.StatusBadRequest)
 			return
 		}
-		ans, err := s.assistant.Ask(r.Context(), req.Question, nil)
-		respondJSON(w, ans, err)
+		ans, err := s.assistant.AskModel(r.Context(), req.Question, nil, req.Model)
+		if err != nil {
+			respondAskError(w, err)
+			return
+		}
+		respondJSON(w, ans, nil)
 	})
 
 	r.Get("/api/ai/models", func(w http.ResponseWriter, r *http.Request) {

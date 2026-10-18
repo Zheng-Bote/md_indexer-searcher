@@ -3,8 +3,25 @@
 
 import { inject, InjectionToken, Service } from '@angular/core';
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
-import { Answer, ApiEnvelope, DocumentView, ModelsResponse } from './api.types';
+import {
+  Answer,
+  ApiEnvelope,
+  DocumentView,
+  ModelRef,
+  ModelsResponse,
+  ProviderErrorKind,
+} from './api.types';
 import { BackendService } from './backend.service';
+
+/** md-api error; `kind` classifies failures of the selected LLM provider. */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly kind?: ProviderErrorKind,
+  ) {
+    super(message);
+  }
+}
 
 /** Transport used by ApiClient; tests provide a stub instead of module-mocking the Tauri plugin. */
 export const HTTP_FETCH = new InjectionToken<typeof tauriFetch>('HTTP_FETCH', {
@@ -25,11 +42,12 @@ export class ApiClient {
     return this.request<ModelsResponse>('/api/ai/models');
   }
 
-  ask(question: string): Promise<Answer> {
+  /** Asks a question; without `model` md-api answers with its default local model. */
+  ask(question: string, model?: ModelRef | null): Promise<Answer> {
     return this.request<Answer>('/api/ai/ask', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question }),
+      body: JSON.stringify(model ? { question, model } : { question }),
     });
   }
 
@@ -48,10 +66,13 @@ export class ApiClient {
     try {
       body = (await response.json()) as ApiEnvelope<T>;
     } catch {
-      throw new Error(`md-api antwortete mit HTTP ${response.status}.`);
+      throw new ApiError(`md-api antwortete mit HTTP ${response.status}.`);
     }
     if (!response.ok || !body.success || body.data === undefined) {
-      throw new Error(body.error ?? `md-api antwortete mit HTTP ${response.status}.`);
+      throw new ApiError(
+        body.error ?? `md-api antwortete mit HTTP ${response.status}.`,
+        body.error_kind,
+      );
     }
     return body.data;
   }

@@ -12,11 +12,13 @@ Desktop client for md-indexer (Tauri v2, Angular 22, Spartan-ng). Pick a vault, 
 - The app starts two sidecars per vault, both bound to `127.0.0.1` on free ports:
   1. `md-indexer -dir <vault>` builds and watches the index in `<vault>/.md_indexer/md_indexer.db` (or the user data dir fallback for read-only vaults). A database from an earlier app version (`<appData>/vaults/<hash>.db`) is passed as `-migrate-from` and moved there once, embeddings included. Its `/health` only answers after the initial index is done, so the app shows "Indexiere Vault…" until then.
   2. `md-api -ai -vault <vault>` opens the same database and serves `/api/ai/ask`, `/api/ai/models` and `/api/document`.
-- Changing the vault or a model restarts both sidecars. Unchanged notes are not re-parsed, and embeddings are only computed for sections that are missing them.
+- Changing the vault, the embedding model or the `.env` file restarts both sidecars. Unchanged notes are not re-parsed, and embeddings are only computed for sections that are missing them.
+- The answer model is sent with every question (`POST /api/ai/ask` with `model`), so switching it needs no restart. "Antwort-Modell" lists local Ollama generation models (largest first, with parameter size) and, grouped per provider, the cloud models configured in md_indexer's `.env`; "Embedding-Modell" lists embedding models only.
+- Cloud providers: the app only stores the **path** of the `.env` ("Cloud-Anbieter (.env)", default `~/.config/md-indexer/.env`) and passes it to `md-api` as `MD_AI_ENV_FILE`; `md-api` reads the keys itself, so they never pass through the app or `settings.json`. Before the first question to a cloud provider the app asks for consent (valid until it closes); answers show "Lokal" or "Cloud · <Provider>", and provider errors (invalid key, rate limit, refusal, truncated answer) get specific messages.
 - Without an embedding model, `md-api` runs with `-vectors=false` (full-text and graph retrieval only).
 - `md-api` reads `~/.config/md-indexer/ai.yaml` as usual (Ollama host, context budget, …). Values chosen in the app take precedence.
 - Clicking a source opens the document viewer. It loads the original Markdown via `/api/document` (stored in the index, so the app never reads vault files), hides frontmatter, scrolls to the cited section and turns resolvable wikilinks into links. "Zurück" walks the link history back to the answer, "Schließen"/`Esc` returns directly. External links, images and `![[embeds]]` are shown as text.
-- Settings are stored in `settings.json` in the app data directory.
+- Settings are stored in `settings.json` in the app data directory (vault, answer model as `{provider, name}`, embedding model, `.env` path; older `model` entries are migrated).
 
 ## Development
 

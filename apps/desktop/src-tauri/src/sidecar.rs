@@ -48,12 +48,14 @@ pub struct BackendStatus {
     pub log_tail: Vec<String>,
 }
 
-/// Requested backend configuration. Empty model names fall back to md-api defaults;
-/// an empty embedding model disables vector retrieval.
+/// Requested backend configuration. An empty embedding model disables vector retrieval.
+/// The answer model is chosen per question (md-api routes it), so changing it needs no restart.
+/// `env_file` is the path of md_indexer's .env; md-api reads the API keys from it itself, so keys
+/// never pass through the app.
 pub struct BackendConfig {
     pub vault: String,
-    pub model: Option<String>,
     pub embedding_model: Option<String>,
+    pub env_file: Option<String>,
 }
 
 #[derive(Default)]
@@ -203,16 +205,16 @@ async fn start(
     let indexer_port = free_port()?;
     let legacy_db = legacy_db.is_file().then_some(legacy_db);
     let args = indexer_args(&config.vault, legacy_db, indexer_port, embedding_model);
-    spawn(app, generation, Sidecar::Indexer, args)?;
+    spawn(app, generation, Sidecar::Indexer, args, Vec::new())?;
     if !wait_healthy(app, generation, indexer_port).await {
         return Ok(());
     }
 
     manager.update(app, generation, BackendState::Starting, None, None);
     let api_port = free_port()?;
-    let model = config.model.as_deref().filter(|m| !m.is_empty());
-    let args = api_args(&config.vault, api_port, model, embedding_model);
-    spawn(app, generation, Sidecar::Api, args)?;
+    let args = api_args(&config.vault, api_port, embedding_model);
+    let env_file = config.env_file.as_deref().filter(|p| !p.is_empty());
+    spawn(app, generation, Sidecar::Api, args, api_env(env_file))?;
     if !wait_healthy(app, generation, api_port).await {
         return Ok(());
     }
@@ -251,12 +253,7 @@ fn indexer_args(
 }
 
 /// Arguments for `md-api`; it opens the index database that md-indexer resolved for the vault.
-fn api_args(
-    vault: &str,
-    port: u16,
-    model: Option<&str>,
-    embedding_model: Option<&str>,
-) -> Vec<String> {
+fn api_args(vault: &str, port: u16, embedding_model: Option<&str>) -> Vec<String> {
     let mut args = vec![
         "-vault".to_string(),
         vault.to_string(),
@@ -266,9 +263,6 @@ fn api_args(
         port.to_string(),
         "-ai".to_string(),
     ];
-    if let Some(model) = model {
-        args.extend(["-model".to_string(), model.to_string()]);
-    }
     match embedding_model {
         Some(embedding) => args.extend([
             "-vectors=true".to_string(),
@@ -280,11 +274,19 @@ fn api_args(
     args
 }
 
+/// Environment for `md-api`: only the path of the .env file, never its keys.
+fn api_env(env_file: Option<&str>) -> Vec<(String, String)> {
+    env_file
+        .map(|path| vec![("MD_AI_ENV_FILE".to_string(), path.to_string())])
+        .unwrap_or_default()
+}
+
 fn spawn(
     app: &AppHandle,
     generation: u64,
     sidecar: Sidecar,
     args: Vec<String>,
+    env: Vec<(String, String)>,
 ) -> Result<(), String> {
     let name = sidecar.binary();
     let (mut events, child) = app
@@ -292,6 +294,7 @@ fn spawn(
         .sidecar(name)
         .map_err(|e| format!("{name} sidecar not found: {e}"))?
         .args(args)
+        .envs(env)
         .spawn()
         .map_err(|e| format!("failed to start {name}: {e}"))?;
     app.state::<SidecarManager>()
@@ -415,7 +418,7 @@ fn strip_ansi(input: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{api_args, indexer_args, strip_ansi};
+    use super::{api_args, api_env, indexer_args, strip_ansi};
     use std::path::Path;
 
     #[test]
@@ -447,8 +450,8 @@ mod tests {
     }
 
     #[test]
-    fn api_args_use_the_vault_instead_of_a_database_path() {
-        let args = api_args("/v", 4712, Some("qwen3:32b"), None);
+    fn api_args_use_the_vault_and_no_answer_model() {
+        let args = api_args("/v", 4712, None);
         assert_eq!(
             args,
             [
@@ -459,17 +462,27 @@ mod tests {
                 "-port",
                 "4712",
                 "-ai",
-                "-model",
-                "qwen3:32b",
                 "-vectors=false",
             ]
         );
-        assert!(!args.iter().any(|a| a == "-db"));
-        assert!(api_args("/v", 4712, None, Some("bge-m3")).ends_with(&[
+        assert!(!args.iter().any(|a| a == "-db" || a == "-model"));
+        assert!(api_args("/v", 4712, Some("bge-m3")).ends_with(&[
             "-vectors=true".to_string(),
             "-embedding-model".to_string(),
             "bge-m3".to_string(),
         ]));
+    }
+
+    #[test]
+    fn api_env_passes_only_the_env_file_path() {
+        assert!(api_env(None).is_empty());
+        assert_eq!(
+            api_env(Some("/home/u/.config/md-indexer/.env")),
+            [(
+                "MD_AI_ENV_FILE".to_string(),
+                "/home/u/.config/md-indexer/.env".to_string()
+            )]
+        );
     }
 
     #[test]

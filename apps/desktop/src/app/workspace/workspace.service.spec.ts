@@ -51,12 +51,14 @@ describe('WorkspaceService', () => {
     return TestBed.inject(WorkspaceService);
   }
 
-  it('restores the last vault and starts the backend', async () => {
-    const workspace = setup({ vault: '/vault', model: 'qwen3:14b', embeddingModel: 'bge-m3' });
+  const claude = { provider: 'claude', name: 'claude-opus-5-5' };
+
+  it('restores the last vault and starts the backend with embedding model and .env path', async () => {
+    const workspace = setup({ vault: '/vault', answerModel: claude, embeddingModel: 'bge-m3', envFile: '/home/u/.env' });
 
     await workspace.init();
 
-    expect(applied).toEqual([{ vault: '/vault', model: 'qwen3:14b', embeddingModel: 'bge-m3' }]);
+    expect(applied).toEqual([{ vault: '/vault', embeddingModel: 'bge-m3', envFile: '/home/u/.env' }]);
   });
 
   it('does not start anything without a saved vault', async () => {
@@ -67,25 +69,44 @@ describe('WorkspaceService', () => {
     expect(applied).toEqual([]);
   });
 
-  it('persists a model change and restarts the backend', async () => {
-    const workspace = setup({ vault: '/vault', model: 'qwen3:14b', embeddingModel: null });
+  it('persists an answer model change without restarting the backend', async () => {
+    const workspace = setup({ vault: '/vault', answerModel: null, embeddingModel: null, envFile: null });
     await workspace.init();
 
-    await workspace.selectModel('llama3:8b');
+    await workspace.selectAnswerModel(claude);
 
-    expect(saved.model).toBe('llama3:8b');
-    expect(applied.at(-1)).toEqual({ vault: '/vault', model: 'llama3:8b', embeddingModel: null });
+    expect(saved.answerModel).toEqual(claude);
+    expect(applied.length).toBe(1);
   });
 
-  it('loads models once ready and adopts the active model on first start', async () => {
-    const workspace = setup({ vault: '/vault', model: null, embeddingModel: null });
+  it('restarts the backend when the .env file changes', async () => {
+    const workspace = setup({ vault: '/vault', answerModel: claude, embeddingModel: null, envFile: null });
+    await workspace.init();
+
+    await workspace.selectEnvFile('/secrets/md.env');
+
+    expect(saved.envFile).toBe('/secrets/md.env');
+    expect(applied.at(-1)).toEqual({ vault: '/vault', embeddingModel: null, envFile: '/secrets/md.env' });
+  });
+
+  it('loads models once ready and adopts the active model as local answer model on first start', async () => {
+    const workspace = setup({ vault: '/vault', answerModel: null, embeddingModel: null, envFile: null });
     await workspace.init();
 
     status.set({ state: 'ready', vault: '/vault', apiBaseUrl: 'http://127.0.0.1:1', message: null, logTail: [] });
     TestBed.tick();
     await vi.waitFor(() => expect(workspace.models().length).toBe(1));
 
-    expect(saved.model).toBe('qwen3:14b');
+    expect(saved.answerModel).toEqual({ provider: 'ollama', name: 'qwen3:14b' });
     expect(applied.length).toBe(1);
+  });
+
+  it('keeps cloud consent per provider until the app closes', () => {
+    const workspace = setup(EMPTY_SETTINGS);
+
+    workspace.grantCloudConsent('Claude');
+
+    expect(workspace.cloudConsent().has('Claude')).toBe(true);
+    expect(workspace.cloudConsent().has('Gemini')).toBe(false);
   });
 });

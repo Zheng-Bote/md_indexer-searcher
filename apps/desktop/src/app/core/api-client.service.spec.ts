@@ -3,7 +3,7 @@
 
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { ApiClient, HTTP_FETCH } from './api-client.service';
+import { ApiClient, ApiError, HTTP_FETCH } from './api-client.service';
 import { BackendService } from './backend.service';
 
 const fetchMock = vi.fn<(input: string, init?: RequestInit) => Promise<Response>>();
@@ -73,5 +73,20 @@ describe('ApiClient', () => {
 
     await expect(client.listModels()).rejects.toThrow('nicht bereit');
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('sends the selected model and exposes the provider error kind', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(502, { success: false, error: 'claude: auth (HTTP 401): invalid x-api-key', error_kind: 'auth' }),
+    );
+
+    const failure = client.ask('Frage', { provider: 'claude', name: 'claude-opus-5-5' });
+
+    await expect(failure).rejects.toBeInstanceOf(ApiError);
+    await expect(failure).rejects.toMatchObject({ kind: 'auth' });
+    expect(JSON.parse(fetchMock.mock.calls[0][1]?.body as string)).toEqual({
+      question: 'Frage',
+      model: { provider: 'claude', name: 'claude-opus-5-5' },
+    });
   });
 });

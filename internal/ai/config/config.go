@@ -38,6 +38,15 @@ type Config struct {
 	TopKVector         int     `json:"top_k_vector" yaml:"top_k_vector"`
 	MinVectorScore     float64 `json:"min_vector_score" yaml:"min_vector_score"`
 	FusionVectorWeight float64 `json:"fusion_vector_weight" yaml:"fusion_vector_weight"`
+
+	// Cloud models (providers configured in the .env file, see envfile.go) get their own budgets,
+	// because MaxContextTokens/MaxTokens/TimeoutSeconds are tuned for local CPU inference.
+	EnvFile               string            `json:"env_file" yaml:"env_file"`
+	CloudMaxContextTokens int               `json:"cloud_max_context_tokens" yaml:"cloud_max_context_tokens"`
+	CloudMaxTokens        int               `json:"cloud_max_tokens" yaml:"cloud_max_tokens"`
+	CloudTimeoutSeconds   int               `json:"cloud_timeout_seconds" yaml:"cloud_timeout_seconds"`
+	ClaudeEffort          string            `json:"claude_effort" yaml:"claude_effort"`
+	ClaudeEffortByModel   map[string]string `json:"claude_effort_by_model" yaml:"claude_effort_by_model"`
 }
 
 // Retriever implementations.
@@ -71,6 +80,11 @@ func DefaultConfig() *Config {
 		TopKVector:         25,
 		MinVectorScore:     0.55,
 		FusionVectorWeight: 0.35,
+
+		CloudMaxContextTokens: 16000,
+		CloudMaxTokens:        16000,
+		CloudTimeoutSeconds:   180,
+		ClaudeEffort:          "medium",
 	}
 }
 
@@ -190,6 +204,27 @@ func (c *Config) LoadFromEnv() {
 	if val := os.Getenv("MD_AI_JSON"); val != "" {
 		c.JSONOutput = val == "true" || val == "1"
 	}
+	if val := os.Getenv("MD_AI_ENV_FILE"); val != "" {
+		c.EnvFile = val
+	}
+	if val := os.Getenv("MD_AI_CLOUD_MAX_CONTEXT_TOKENS"); val != "" {
+		if i, err := strconv.Atoi(val); err == nil {
+			c.CloudMaxContextTokens = i
+		}
+	}
+	if val := os.Getenv("MD_AI_CLOUD_MAX_TOKENS"); val != "" {
+		if i, err := strconv.Atoi(val); err == nil {
+			c.CloudMaxTokens = i
+		}
+	}
+	if val := os.Getenv("MD_AI_CLOUD_TIMEOUT"); val != "" {
+		if i, err := strconv.Atoi(val); err == nil {
+			c.CloudTimeoutSeconds = i
+		}
+	}
+	if val := os.Getenv("MD_AI_CLAUDE_EFFORT"); val != "" {
+		c.ClaudeEffort = val
+	}
 }
 
 // Validate checks whether configuration values are within acceptable bounds.
@@ -215,10 +250,42 @@ func (c *Config) Validate() error {
 	if c.EnableVectors && c.EmbeddingModel == "" {
 		return fmt.Errorf("embedding model must not be empty when vectors are enabled")
 	}
+	if c.CloudMaxContextTokens < 100 || c.CloudMaxTokens < 1 || c.CloudTimeoutSeconds < 1 {
+		return fmt.Errorf("cloud budgets must be positive (context >= 100 tokens)")
+	}
+	for model, effort := range c.ClaudeEffortByModel {
+		if !validEffort(effort) {
+			return fmt.Errorf("invalid claude effort %q for model %s", effort, model)
+		}
+	}
+	if !validEffort(c.ClaudeEffort) {
+		return fmt.Errorf("invalid claude effort %q (low, medium, high, xhigh, max)", c.ClaudeEffort)
+	}
 	if c.Retriever != RetrieverHybrid && c.Retriever != RetrieverClassic {
 		return fmt.Errorf("retriever must be %q or %q, got %q", RetrieverHybrid, RetrieverClassic, c.Retriever)
 	}
 	return nil
+}
+
+// EffortFor returns the configured Claude effort for model.
+func (c *Config) EffortFor(model string) string {
+	if effort, ok := c.ClaudeEffortByModel[model]; ok {
+		return effort
+	}
+	return c.ClaudeEffort
+}
+
+func validEffort(e string) bool {
+	switch e {
+	case "low", "medium", "high", "xhigh", "max":
+		return true
+	}
+	return false
+}
+
+// CloudTimeout returns the request timeout for cloud providers.
+func (c *Config) CloudTimeout() time.Duration {
+	return time.Duration(c.CloudTimeoutSeconds) * time.Second
 }
 
 // Timeout returns the LLM request timeout as a duration.

@@ -29,6 +29,7 @@ import (
 
 var (
 	cfgFile      string
+	providerID   string
 	vaultDir     string
 	retrieveOnly bool
 	streamOutput bool
@@ -50,6 +51,8 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&vaultDir, "vault", ".", "Vault whose index database is used when no database path is configured")
 	rootCmd.PersistentFlags().StringVar(&cfg.OllamaHost, "ollama-host", cfg.OllamaHost, "Ollama API host URL")
 	rootCmd.PersistentFlags().StringVarP(&cfg.Model, "model", "m", cfg.Model, "LLM model name")
+	rootCmd.PersistentFlags().StringVar(&providerID, "provider", config.ProviderOllama, "Provider of --model: ollama, ollama-cloud, openrouter, nvidia, claude or gemini (cloud providers need a key in the .env)")
+	rootCmd.PersistentFlags().StringVar(&cfg.EnvFile, "env-file", cfg.EnvFile, "Path to md_indexer's .env with cloud provider keys (default: MD_AI_ENV_FILE or ~/.config/md-indexer/.env)")
 	rootCmd.PersistentFlags().Float64Var(&cfg.Temperature, "temperature", cfg.Temperature, "Generation temperature")
 	rootCmd.PersistentFlags().IntVar(&cfg.MaxTokens, "max-tokens", cfg.MaxTokens, "Max generated tokens")
 	rootCmd.PersistentFlags().IntVar(&cfg.MaxContextTokens, "max-context-tokens", cfg.MaxContextTokens, "Max context token budget")
@@ -101,6 +104,24 @@ func initAssistant() (*assistant.Assistant, *sql.DB, error) {
 	prov := provider.NewOllamaProvider(cfg.OllamaHost, &http.Client{Timeout: cfg.Timeout()})
 
 	asst := assistant.NewAssistant(cfg, clf, ret, cb, prov)
+	envFile, err := config.LoadEnvFile(cfg.EnvFile)
+	if err != nil {
+		return nil, nil, err
+	}
+	if envFile.Insecure {
+		fmt.Fprintf(os.Stderr, "Warning: %s is readable by other users; restrict it with chmod 600\n", envFile.Path)
+	}
+	registry := provider.NewRegistry(prov, envFile.Providers(), cfg.CloudTimeout(), cfg.EffortFor)
+	asst.WithModels(registry, contextbuilder.NewContextBuilder(cfg.CloudMaxContextTokens))
+	ref := model.ModelRef{Provider: providerID, Name: cfg.Model}
+	_, locality, err := registry.Resolve(ref)
+	if err != nil {
+		return nil, nil, err
+	}
+	if locality == model.LocalityCloud {
+		fmt.Fprintf(os.Stderr, "Note: %s (%s) is a cloud model; excerpts of your notes are sent to that provider.\n", cfg.Model, providerID)
+	}
+	asst.WithDefaultModel(ref)
 	return asst, db, nil
 }
 

@@ -6,13 +6,41 @@ export interface ApiEnvelope<T> {
   success: boolean;
   data?: T;
   error?: string;
+  /** Set on provider failures of /api/ai/ask (HTTP 502). */
+  error_kind?: ProviderErrorKind;
 }
+
+export type ProviderErrorKind =
+  'auth' | 'rate_limit' | 'refusal' | 'truncated' | 'timeout' | 'unavailable';
+
+export type Locality = 'local' | 'cloud';
 
 export interface ModelInfo {
   name: string;
   size: number;
   family?: string;
+  provider?: string;
+  provider_name?: string;
+  locality?: Locality;
+  kind?: 'generation' | 'embedding';
+  parameter_size?: string;
 }
+
+/** Selects the model that answers a question. */
+export interface ModelRef {
+  provider: string;
+  name: string;
+}
+
+/** Display names of the provider IDs used by md-api. */
+export const PROVIDER_NAMES: Record<string, string> = {
+  ollama: 'Ollama',
+  'ollama-cloud': 'Ollama Cloud',
+  openrouter: 'OpenRouter',
+  nvidia: 'NVIDIA NIM',
+  claude: 'Claude',
+  gemini: 'Gemini',
+};
 
 /** Payload of GET /api/ai/models. An empty embedding_model means vectors are disabled. */
 export interface ModelsResponse {
@@ -40,6 +68,8 @@ export interface Answer {
   answer: string;
   intent: string;
   model: string;
+  provider?: string;
+  locality?: Locality;
   sources: SourceCitation[] | null;
   gaps?: KnowledgeGap[] | null;
 }
