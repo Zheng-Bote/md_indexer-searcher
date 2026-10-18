@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 # Feature Specification: Path-Based Document IDs
 
 **Issue:** [#29](https://github.com/Zheng-Bote/md_indexer-searcher/issues/29)  
-**Status:** Specified (`/speckit.specify`)
+**Status:** Planned (`/speckit.plan`) · Decisions confirmed 2026-10-18
 
 ## 1. Feature Intent
 
@@ -16,6 +16,7 @@ Decisions (2026-10-18, issue #29):
 
 - The document ID is derived from the **vault-relative path**. The content hash stays in `documents.hash` for change detection. Renaming or moving a note becomes "remove old document + add new document".
 - Existing `section_embeddings` are **re-keyed** to the new IDs during the migration; unchanged sections are not re-embedded.
+- Repeated headings within one note are fixed in the same change.
 
 ### Current State (verified on `main`)
 
