@@ -31,7 +31,7 @@ SPDX-License-Identifier: Apache-2.0
 - [x] `Dockerfile`: `md-api -host 0.0.0.0`.
 - [x] `md-indexer.sdd`: loopback default for all binaries, no wildcard CORS.
 - [x] `README.md`, `CHANGELOG.md`.
-- [ ] `docs/architektur_erweiterung.md` 4.4 → implemented (after PR #32 is merged; follow-up).
+- [x] `docs/architektur_erweiterung.md` 4.4 → implemented (follow-up commit on PR #32).
 
 ### Task 5: Verification
 - [x] `go vet ./...`, `go test ./...`, `cargo test`.

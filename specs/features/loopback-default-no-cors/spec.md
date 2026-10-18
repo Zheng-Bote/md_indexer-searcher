@@ -90,4 +90,4 @@ SPDX-License-Identifier: Apache-2.0
 - [x] Desktop app works unchanged (`cargo test`; sidecar arguments unchanged, they already pass `-host 127.0.0.1`).
 - [x] `go test ./...` with tests for the address helper and the missing CORS header.
 - [x] `md-indexer.sdd`, `README.md`, `CHANGELOG.md`, `Dockerfile` are up-to-date.
-- [ ] `docs/architektur_erweiterung.md` 4.4 marked implemented (after PR #32 is merged).
+- [x] `docs/architektur_erweiterung.md` 4.4 marked implemented (follow-up commit on PR #32).
