@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 # Feature Specification: Vault-Local Index Database
 
 **Issue:** [#23](https://github.com/Zheng-Bote/md_indexer-searcher/issues/23)  
-**Status:** Specified (`/speckit.specify`)
+**Status:** Planned (`/speckit.plan`) · Decisions confirmed 2026-10-18
 
 ## 1. Feature Intent
 
