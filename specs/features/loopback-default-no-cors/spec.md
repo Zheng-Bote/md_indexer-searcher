@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 # Feature Specification: Loopback by Default, No Wildcard CORS
 
 **Issue:** [#31](https://github.com/Zheng-Bote/md_indexer-searcher/issues/31)  
-**Status:** Specified (`/speckit.specify`)
+**Status:** Planned (`/speckit.plan`) · Decisions confirmed 2026-10-18
 
 ## 1. Feature Intent
 
@@ -56,16 +56,16 @@ SPDX-License-Identifier: Apache-2.0
 - A configurable CORS allowlist. No browser-based client exists; it can be added when one does (see Open Decisions).
 - Fixing the outdated `Dockerfile` base image (`golang:1.21` vs. `go 1.27` in `go.mod`) or adding a vault/indexer setup to the container; only the `md-api` command changes.
 
-## 5. Open Decisions
+## 5. Decisions (2026-10-18)
 
-1. **CORS allowlist (issue requirement 4):** Recommended: no allowlist now (requirement 4 above drops CORS entirely). Alternative: `-cors-origin <origin>` flag, repeatable, default empty.
-2. **`md-indexer` HTTP routes:** Recommended: keep only `/health` (requirement 5): the other two routes are unused, bypass the search engine layer and `/documents` dumps the whole index. Alternative: keep them and only change the bind default.
+1. **No CORS allowlist** for now; requirement 4 drops CORS entirely. An allowlist (`-cors-origin`) can be added when a browser-based client exists.
+2. **`md-indexer` serves only `/health`** (requirement 5): `/documents` and `/search` are unused, bypass the search engine layer, and `/documents` dumps the whole index.
 
 ## 6. Scope & Affected Components
 
 - `cmd/md-api/main.go`, `cmd/indexer/main.go`: `-host` default `127.0.0.1`, `net.JoinHostPort`, warning for non-loopback hosts (shared helper, e.g. in `internal/api` or a small `internal/netaddr` package).
 - `internal/api/rest/server.go`: remove the CORS middleware.
-- `internal/api/server.go`: `/health` only (if decision 2 is confirmed).
+- `internal/api/server.go`: `/health` only.
 - `Dockerfile`: `CMD ["./md-api", "-host", "0.0.0.0"]`.
 - `md-indexer.sdd`: loopback default for all binaries, no wildcard CORS.
 - `README.md` (`-host` section, Docker), `CHANGELOG.md` (behaviour change for users relying on LAN access), `docs/architektur_erweiterung.md` 4.4 → implemented.
@@ -86,7 +86,7 @@ SPDX-License-Identifier: Apache-2.0
 - [ ] Without `-host`, both binaries bind to `127.0.0.1` (checked via the listen address, and manually from another interface address).
 - [ ] A non-loopback `-host` logs the warning; loopback hosts (`127.0.0.1`, `::1`, `localhost`) do not.
 - [ ] No response of `md-api` carries an `Access-Control-Allow-Origin` header.
-- [ ] `md-indexer` answers `/health`; `/documents` and `/search` return `404` (if decision 2 is confirmed).
+- [ ] `md-indexer` answers `/health`; `/documents` and `/search` return `404`.
 - [ ] Desktop app works unchanged (`cargo test`, manual run of a question and the document viewer).
 - [ ] `go test ./...` with tests for the address helper and the missing CORS header.
 - [ ] `md-indexer.sdd`, `README.md`, `CHANGELOG.md`, `Dockerfile`, `docs/architektur_erweiterung.md` are up-to-date.
