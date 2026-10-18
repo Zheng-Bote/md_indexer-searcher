@@ -20,40 +20,41 @@ SPDX-License-Identifier: Apache-2.0
 ## Package & Implementation Tasks
 
 ### Task 1: Configuration (`internal/ai/config`)
-- [ ] `.env` loader (path resolution, parsing, precedence, permission warning).
-- [ ] Provider configs (`none`/empty disabled, default endpoints, `<P>_LLM_xx` order, unknown prefixes ignored).
-- [ ] Config fields: cloud context budget, cloud max tokens, cloud timeout, Claude effort (+ per model), `env_file`.
-- [ ] Tests.
+- [x] `.env` loader (path resolution, parsing, precedence, permission warning).
+- [x] Provider configs (`none`/empty disabled, default endpoints, `<P>_LLM_xx` order, unknown prefixes ignored).
+- [x] Config fields: cloud context budget, cloud max tokens, cloud timeout, Claude effort (+ per model), `env_file`.
+- [x] Tests.
 
 ### Task 2: Providers (`internal/ai/model`, `internal/ai/provider`)
-- [ ] `ModelInfo` (provider, locality, kind, parameter size); `Answer` (provider, locality).
-- [ ] Ollama: classification and parameter size in `ListModels`; Bearer key and `/api/chat` mode for Ollama Cloud.
-- [ ] OpenAI-compatible provider (streaming SSE, usage, error mapping) for OpenRouter, NVIDIA, Gemini.
-- [ ] Claude provider (`anthropic-sdk-go`, streaming, effort, refusal/max_tokens handling, optional server-side fallback).
-- [ ] Typed provider errors.
-- [ ] Registry (`List`, `Resolve`).
-- [ ] Tests with `httptest` servers for every provider.
+- [x] `ModelInfo` (provider, locality, kind, parameter size); `Answer` (provider, locality).
+- [x] Ollama: classification and parameter size in `ListModels`; Bearer key and `/api/chat` mode for Ollama Cloud.
+- [x] OpenAI-compatible provider (streaming SSE, usage, error mapping) for OpenRouter, NVIDIA, Gemini.
+- [x] Claude provider (`anthropic-sdk-go`, streaming, effort, refusal/max_tokens handling, optional server-side fallback).
+- [x] Typed provider errors.
+- [x] Registry (`List`, `Resolve`).
+- [x] Tests with `httptest` servers for every provider.
 
 ### Task 3: Assistant, API, CLI (`internal/ai/assistant`, `internal/api/rest`, `cmd/md-api`, `cmd/md-ai`)
-- [ ] `Ask` with model reference; budgets by locality; actual model in the answer.
-- [ ] `POST /api/ai/ask` `model` field; error JSON with `error_kind`; `GET /api/ai/models` from the registry.
-- [ ] `md-api -env-file`, `md-ai --env-file --provider`; provider summary log without keys; CLI cloud notice.
-- [ ] Tests (routing, no fallback, keys absent from responses).
-- [ ] `openapi.yaml`.
+- [x] `Ask` with model reference; budgets by locality; actual model in the answer.
+- [x] `POST /api/ai/ask` `model` field; error JSON with `error_kind`; `GET /api/ai/models` from the registry.
+- [x] `md-api -env-file`, `md-ai --env-file --provider`; provider summary log without keys; CLI cloud notice.
+- [x] Tests (routing, no fallback, keys absent from responses).
+- [x] `openapi.yaml`.
 
 ### Task 4: Desktop (`apps/desktop`)
-- [ ] Settings: `answerModel {provider,name}` with migration from `model`, `envFile`.
-- [ ] Sidecars: `MD_AI_ENV_FILE` as environment; answer model removed from `md-api` args; no restart on answer-model change.
-- [ ] Model selector: grouped/filtered/sorted lists with size labels; `.env` path setting.
-- [ ] Ask panel: `model` per request, consent once per app run, provider-specific errors; answer badge.
-- [ ] Tests (`ng test`, `cargo test`).
+- [x] Settings: `answerModel {provider,name}` with migration from `model`, `envFile`.
+- [x] Sidecars: `MD_AI_ENV_FILE` as environment; answer model removed from `md-api` args; no restart on answer-model change.
+- [x] Model selector: grouped/filtered/sorted lists with size labels; `.env` path setting.
+- [x] Ask panel: `model` per request, consent once per app run, provider-specific errors; answer badge.
+- [x] Tests (`ng test`, `cargo test`).
 
 ### Task 5: Docs & Specs
-- [ ] `example.env`, `md-ai.example.yaml`, `README.md`, `CHANGELOG.md`.
-- [ ] `md-indexer.sdd` (cloud provider rules).
-- [ ] `docs/architektur_erweiterung.md` (4.1, 5.2 Stage 1, 14).
+- [x] `example.env`, `md-ai.example.yaml`, `README.md`, `CHANGELOG.md`.
+- [x] `md-indexer.sdd` (cloud provider rules).
+- [x] `docs/architektur_erweiterung.md` (4.1, 5.2 Stage 1, 14).
 
 ### Task 6: Verification
-- [ ] `go vet ./...`, `go test ./...`, `ng test`, `ng build`, `cargo test`, `cargo clippy`.
-- [ ] Manual question per configured provider with the user's `.env`; no key in `ps`, logs or responses.
-- [ ] Set spec status to Implemented.
+- [x] `go vet ./...`, `go test ./...`, `ng test`, `ng build`, `cargo test`, `cargo clippy`.
+- [x] Manual `md-api` run on the sample vault (`examples/vault`) with a test `.env` (invalid keys): model list classified (local/cloud, generation/embedding, parameter size), `none`/`GROQ` ignored, permission warning, no key in `ps`/logs/responses; real endpoints of OpenRouter, Claude and Gemini return `auth` (502); unknown model 400; local `qwen3:14b` answer via `model` with `provider`/`locality`.
+- [ ] Manual question per provider with valid keys (user's `.env`) and GUI run of the desktop app.
+- [x] Set spec status to Implemented.

@@ -6,6 +6,7 @@ import { HlmBadgeImports } from '@spartan-ng/helm/badge';
 import { HlmCardImports } from '@spartan-ng/helm/card';
 import { marked } from 'marked';
 import { Answer, SourceCitation } from '../core/api.types';
+import { providerLabel } from './model-options';
 
 @Component({
   selector: 'app-answer-view',
@@ -14,7 +15,10 @@ import { Answer, SourceCitation } from '../core/api.types';
     <section hlmCard aria-labelledby="answer-title">
       <div hlmCardHeader>
         <h2 hlmCardTitle id="answer-title">Antwort</h2>
-        <p hlmCardDescription>
+        <p hlmCardDescription class="flex flex-wrap items-center gap-x-1.5">
+          <span hlmBadge [variant]="answer().locality === 'cloud' ? 'default' : 'outline'">{{
+            origin()
+          }}</span>
           {{ answer().model }} · {{ answer().intent }}
           @if (durationMs() !== null) {
             · Antwortzeit {{ duration() }} min
@@ -78,6 +82,10 @@ export class AnswerView {
   protected readonly sources = computed(() => this.answer().sources ?? []);
   protected readonly gaps = computed(() => this.answer().gaps ?? []);
   protected readonly duration = computed(() => formatDuration(this.durationMs() ?? 0));
+  protected readonly origin = computed(() => {
+    const a = this.answer();
+    return a.locality === 'cloud' ? `Cloud · ${providerLabel(a.provider, a.model)}` : 'Lokal';
+  });
 
   protected fileName(path: string): string {
     return path.split(/[\\/]/).pop() ?? path;

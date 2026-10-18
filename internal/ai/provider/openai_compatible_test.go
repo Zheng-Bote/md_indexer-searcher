@@ -49,6 +49,10 @@ func TestOpenAICompatProvider_Errors(t *testing.T) {
 	cases := map[string]func(w http.ResponseWriter){
 		ErrKindAuth:      func(w http.ResponseWriter) { w.WriteHeader(401) },
 		ErrKindRateLimit: func(w http.ResponseWriter) { w.WriteHeader(429) },
+		ErrKindUnavailable: func(w http.ResponseWriter) {
+			w.WriteHeader(400)
+			w.Write([]byte(`{"error":{"message":"model not found"}}`))
+		},
 		ErrKindTruncated: func(w http.ResponseWriter) {
 			w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"abgeschn\"},\"finish_reason\":\"length\"}]}\n\ndata: [DONE]\n\n"))
 		},
@@ -61,5 +65,12 @@ func TestOpenAICompatProvider_Errors(t *testing.T) {
 		if !errors.As(err, &perr) || perr.Kind != kind || perr.Provider != "gemini" {
 			t.Errorf("expected %s, got %v", kind, err)
 		}
+	}
+}
+
+func TestStatusError_GeminiInvalidKeyIsAuth(t *testing.T) {
+	err := statusError("gemini", 400, `[{"error":{"code":400,"message":"Please pass a valid API key","status":"INVALID_ARGUMENT"}}]`)
+	if err.Kind != ErrKindAuth {
+		t.Errorf("expected auth, got %s", err.Kind)
 	}
 }

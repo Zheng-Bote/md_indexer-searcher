@@ -13,15 +13,15 @@ fn apply_config(
     app: AppHandle,
     manager: State<'_, SidecarManager>,
     vault: String,
-    model: Option<String>,
     embedding_model: Option<String>,
+    env_file: Option<String>,
 ) -> Result<(), String> {
     manager.apply(
         &app,
         BackendConfig {
             vault,
-            model,
             embedding_model,
+            env_file,
         },
     )
 }

@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 # Feature Specification: Local Model Filtering and Cloud LLM Providers
 
 **Issue:** [#24](https://github.com/Zheng-Bote/md_indexer-searcher/issues/24)  
-**Status:** Planned (`/speckit.plan`) · Decisions confirmed 2026-10-18  
+**Status:** Implemented (`/speckit.implement`) · Decisions confirmed 2026-10-18  
 **Architecture context:** `docs/architektur_erweiterung.md` (4.1, 4.2, 5.1, 5.2 Stage 1, 12)
 
 ## 1. Feature Intent
@@ -125,13 +125,14 @@ Local CPU generation takes minutes (2026-10-18 benchmark: `qwen3:14b` ≈ 2 min 
 
 ## 8. Acceptance Criteria
 
-- [ ] Answer selector: only generation models (local, sorted by size, with size label) plus enabled cloud models; embedding selector: only embedding models.
-- [ ] Ollama cloud models of the local daemon are listed as cloud models.
-- [ ] Providers with missing, empty or `none` keys are not offered; `GROQ_*` entries are ignored.
-- [ ] Questions are answered by Ollama Cloud, OpenRouter, NVIDIA NIM, Claude and Gemini models (mocked in tests; one manual run per configured provider).
-- [ ] Claude refusals, 401 and 429 produce specific messages; no fallback to another provider or local model.
-- [ ] Keys do not appear in process arguments (`ps`), logs, API responses or `settings.json`.
-- [ ] Consent notice appears once per app session before the first cloud question; cloud answers carry the badge and `provider`/`locality`.
-- [ ] Without `.env` the app works as before (local models only).
-- [ ] `go test ./...` (providers against `httptest` servers, `.env` parsing incl. precedence and `none`, model classification, routing), `ng test` (selectors, notice, badge), `cargo test`.
-- [ ] `example.env`, `README.md`, `CHANGELOG.md`, `openapi.yaml`, `md-indexer.sdd`, `docs/architektur_erweiterung.md` are up-to-date.
+- [x] Answer selector: only generation models (local, sorted by size, with size label) plus enabled cloud models; embedding selector: only embedding models.
+- [x] Ollama cloud models of the local daemon are listed as cloud models.
+- [x] Providers with missing, empty or `none` keys are not offered; `GROQ_*` entries are ignored.
+- [x] Questions are answered by Ollama Cloud, OpenRouter, NVIDIA NIM, Claude and Gemini models (mocked in tests; real endpoints verified for authentication handling).
+- [ ] One manual question per provider with valid keys (pending: user's `.env`).
+- [x] Claude refusals, 401 and 429 produce specific messages; no fallback to another provider or local model.
+- [x] Keys do not appear in process arguments (`ps`), logs, API responses or `settings.json`.
+- [x] Consent notice appears once per app session before the first cloud question; cloud answers carry the badge and `provider`/`locality`.
+- [x] Without `.env` the app works as before (local models only).
+- [x] `go test ./...` (providers against `httptest` servers, `.env` parsing incl. precedence and `none`, model classification, routing), `ng test` (selectors, notice, badge), `cargo test`.
+- [x] `example.env`, `README.md`, `CHANGELOG.md`, `openapi.yaml`, `md-indexer.sdd`, `docs/architektur_erweiterung.md` are up-to-date.

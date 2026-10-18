@@ -24,6 +24,9 @@ It maintains a strict one-way flow of information: Markdown files are the single
 *   **MUST** apply secret redaction (`internal/ai/contextbuilder`) to all vault content before it is passed to an LLM provider.
 *   **MUST** access LLM and embedding backends only through provider interfaces; provider-specific protocol code (HTTP requests, authentication, response parsing) lives only in `internal/ai/provider` and `internal/embedding`.
 *   **MUST NOT** pass secrets (API keys, tokens) via command-line arguments, write them to logs, or return them in API responses.
+*   **MUST** send vault content to a cloud LLM provider only for a model the user selected explicitly; whether a model is local is decided per model (local Ollama host and no `:cloud` model), not per provider.
+*   **MUST NOT** fall back from a failing provider to another provider or between local and cloud models.
+*   **MUST** read cloud API keys only from the process environment or md_indexer's `.env` inside the Go binaries; client apps pass at most the file path.
 *   **FORBIDS** the use of global variables for state management.
 *   **FORBIDS** writing any code that violates the standard Go project layout (`cmd/`, `internal/`).
 *   **MUST NOT** access the SQLite database or the vault's Markdown files directly from client apps under `apps/`.

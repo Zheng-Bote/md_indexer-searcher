@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 )
 
 // Error kinds reported to callers so they can show a specific message.
@@ -43,6 +44,11 @@ func statusError(provider string, status int, body string) *Error {
 		kind = ErrKindAuth
 	case http.StatusTooManyRequests:
 		kind = ErrKindRateLimit
+	case http.StatusBadRequest:
+		// Gemini answers an invalid key with 400 INVALID_ARGUMENT ("API_KEY_INVALID" / "valid API key").
+		if lower := strings.ToLower(body); strings.Contains(lower, "api_key_invalid") || strings.Contains(lower, "valid api key") {
+			kind = ErrKindAuth
+		}
 	}
 	if len(body) > 300 {
 		body = body[:300]
