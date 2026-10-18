@@ -3,7 +3,10 @@
 package parser
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -33,7 +36,7 @@ It also stores auditing records in [[AuditLogger]] and adheres to #security and 
 	f.Close()
 
 	p := NewParser()
-	doc, err := p.ParseFile(f.Name())
+	doc, err := p.ParseFile(f.Name(), "doc-1")
 	if err != nil {
 		t.Fatalf("ParseFile failed: %v", err)
 	}
@@ -133,7 +136,7 @@ Just a standard markdown note linking to [[ArchitectureGuide]].
 	f.Close()
 
 	p := NewParser()
-	doc, err := p.ParseFile(f.Name())
+	doc, err := p.ParseFile(f.Name(), "doc-1")
 	if err != nil {
 		t.Fatalf("ParseFile failed: %v", err)
 	}
@@ -170,7 +173,7 @@ Key components:
 	f.Close()
 
 	p := NewParser()
-	doc, err := p.ParseFile(f.Name())
+	doc, err := p.ParseFile(f.Name(), "doc-1")
 	if err != nil {
 		t.Fatalf("ParseFile failed: %v", err)
 	}
@@ -240,7 +243,7 @@ Inline code like ` + "`[[which treefrog]] #define`" + ` must be ignored.
 	f.WriteString(content)
 	f.Close()
 
-	doc, err := NewParser().ParseFile(f.Name())
+	doc, err := NewParser().ParseFile(f.Name(), "doc-1")
 	if err != nil {
 		t.Fatalf("ParseFile failed: %v", err)
 	}
@@ -277,5 +280,41 @@ Inline code like ` + "`[[which treefrog]] #define`" + ` must be ignored.
 	// Tags must include #iot, but ignore #include, #define, and numeric #123.
 	if len(doc.Tags) != 1 || doc.Tags[0] != "iot" {
 		t.Errorf("expected only tag 'iot', got %+v", doc.Tags)
+	}
+}
+
+func TestParseFile_IDsAndRepeatedHeadings(t *testing.T) {
+	content := "Lead text.\n\n## Example\n\nfirst\n\n## overview\n\nnamed like the implicit section\n\n## Example\n\nsecond\n\n## Example\n\nthird\n"
+	path := filepath.Join(t.TempDir(), "Note.md")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	doc, err := NewParser().ParseFile(path, "id1")
+	if err != nil {
+		t.Fatalf("ParseFile failed: %v", err)
+	}
+	if doc.ID != "id1" {
+		t.Errorf("expected caller-provided ID, got %s", doc.ID)
+	}
+	sum := sha256.Sum256([]byte(content))
+	if doc.Hash != hex.EncodeToString(sum[:]) {
+		t.Errorf("Hash must stay the content SHA-256, got %s", doc.Hash)
+	}
+
+	want := []struct{ id, content string }{
+		{"id1-overview", "Lead text."},
+		{"id1-Example", "first"},
+		{"id1-overview#2", "named like the implicit section"},
+		{"id1-Example#2", "second"},
+		{"id1-Example#3", "third"},
+	}
+	if len(doc.Sections) != len(want) {
+		t.Fatalf("expected %d sections, got %+v", len(want), doc.Sections)
+	}
+	for i, w := range want {
+		if doc.Sections[i].ID != w.id || doc.Sections[i].Content != w.content {
+			t.Errorf("section %d = %q/%q, want %q/%q", i, doc.Sections[i].ID, doc.Sections[i].Content, w.id, w.content)
+		}
 	}
 }

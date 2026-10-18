@@ -39,7 +39,9 @@ func NewParser() *Parser {
 	}
 }
 
-func (p *Parser) ParseFile(path string) (*entities.Document, error) {
+// ParseFile parses the Markdown file at path into a document with the given ID.
+// The caller derives the ID (see service.DocumentID); Hash is the SHA-256 of the content.
+func (p *Parser) ParseFile(path, id string) (*entities.Document, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -56,7 +58,7 @@ func (p *Parser) ParseFile(path string) (*entities.Document, error) {
 	title = strings.TrimSuffix(title, filepath.Ext(title))
 
 	doc := &entities.Document{
-		ID:               hashStr,
+		ID:               id,
 		Path:             path,
 		Title:            title,
 		Hash:             hashStr,
@@ -122,11 +124,21 @@ func (p *Parser) extractAST(doc *entities.Document, content []byte) {
 		}
 	}
 
+	// Repeated headings get "#<n>" from the second occurrence on; the first keeps its plain ID.
+	seen := make(map[string]int)
+	sectionID := func(suffix string) string {
+		seen[suffix]++
+		if n := seen[suffix]; n > 1 {
+			return fmt.Sprintf("%s-%s#%d", doc.ID, suffix, n)
+		}
+		return doc.ID + "-" + suffix
+	}
+
 	currentSectionIdx := -1
 	ensureSection := func() int {
 		if currentSectionIdx < 0 {
 			doc.Sections = append(doc.Sections, entities.Section{
-				ID:      doc.ID + "-overview",
+				ID:      sectionID("overview"),
 				Heading: "Overview",
 				Level:   1,
 				Content: "",
@@ -141,7 +153,7 @@ func (p *Parser) extractAST(doc *entities.Document, content []byte) {
 			headingText := string(heading.Text(content))
 			p.extractLinksAndTags(doc, headingText)
 			doc.Sections = append(doc.Sections, entities.Section{
-				ID:      doc.ID + "-" + headingText,
+				ID:      sectionID(headingText),
 				Heading: headingText,
 				Level:   heading.Level,
 				Content: "",

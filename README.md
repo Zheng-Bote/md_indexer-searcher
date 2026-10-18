@@ -95,6 +95,8 @@ erDiagram
     }
 ```
 
+`documents.id` is the SHA-256 of the note's path relative to the vault root, so every file is its own document even when several notes have identical content; `documents.hash` is the SHA-256 of the content and detects changes. Section IDs are `<document id>-<heading>`; a repeated heading gets `#2`, `#3`, … Renaming or moving a note removes the old document and indexes the new one.
+
 ## Component Diagram
 
 ```mermaid

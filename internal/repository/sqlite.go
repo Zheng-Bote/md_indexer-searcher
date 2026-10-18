@@ -87,11 +87,13 @@ func migrate(db *sql.DB) error {
 }
 
 func (r *SQLiteRepository) UpsertDocument(ctx context.Context, doc *entities.Document) error {
+	var execErr error
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+	exec := txExec(ctx, tx, &execErr)
 
 	// 1. Wipe previous Document data (both by previous ID at path and new doc.ID)
 	var prevID, prevTitle string
@@ -100,14 +102,14 @@ func (r *SQLiteRepository) UpsertDocument(ctx context.Context, doc *entities.Doc
 		if id == "" {
 			continue
 		}
-		tx.ExecContext(ctx, "DELETE FROM sections WHERE document_id = ?", id)
-		tx.ExecContext(ctx, "DELETE FROM links WHERE source_document_id = ?", id)
-		tx.ExecContext(ctx, "DELETE FROM fts_documents WHERE id = ?", id)
-		tx.ExecContext(ctx, "DELETE FROM fts_sections WHERE document_id = ?", id)
-		tx.ExecContext(ctx, "DELETE FROM document_tags WHERE document_id = ?", id)
-		tx.ExecContext(ctx, "DELETE FROM metadata WHERE document_id = ?", id)
+		exec("DELETE FROM sections WHERE document_id = ?", id)
+		exec("DELETE FROM links WHERE source_document_id = ?", id)
+		exec("DELETE FROM fts_documents WHERE id = ?", id)
+		exec("DELETE FROM fts_sections WHERE document_id = ?", id)
+		exec("DELETE FROM document_tags WHERE document_id = ?", id)
+		exec("DELETE FROM metadata WHERE document_id = ?", id)
 	}
-	tx.ExecContext(ctx, "DELETE FROM documents WHERE path = ?", doc.Path)
+	exec("DELETE FROM documents WHERE path = ?", doc.Path)
 
 	// 2. Wipe Entity properties and outgoing relations for this document
 	entID := doc.EntityName
@@ -115,53 +117,53 @@ func (r *SQLiteRepository) UpsertDocument(ctx context.Context, doc *entities.Doc
 		entID = doc.Title
 	}
 	if prevTitle != "" && prevTitle != entID {
-		tx.ExecContext(ctx, "DELETE FROM entity_properties WHERE entity_id = ?", prevTitle)
-		tx.ExecContext(ctx, "DELETE FROM entity_relations WHERE source_entity_id = ?", prevTitle)
+		exec("DELETE FROM entity_properties WHERE entity_id = ?", prevTitle)
+		exec("DELETE FROM entity_relations WHERE source_entity_id = ?", prevTitle)
 	}
-	tx.ExecContext(ctx, "DELETE FROM entity_properties WHERE entity_id = ?", entID)
-	tx.ExecContext(ctx, "DELETE FROM entity_relations WHERE source_entity_id = ?", entID)
+	exec("DELETE FROM entity_properties WHERE entity_id = ?", entID)
+	exec("DELETE FROM entity_relations WHERE source_entity_id = ?", entID)
 
 	// 3. Insert Document data
-	tx.ExecContext(ctx, "INSERT INTO documents (id, path, title, hash, modified_at, indexed_at, markdown) VALUES (?, ?, ?, ?, ?, ?, ?)", doc.ID, doc.Path, doc.Title, doc.Hash, doc.ModifiedAt, doc.IndexedAt, doc.Markdown)
-	tx.ExecContext(ctx, "INSERT INTO fts_documents (id, title, content, tags) VALUES (?, ?, ?, ?)", doc.ID, doc.Title, doc.Content, strings.Join(doc.Tags, " "))
+	exec("INSERT INTO documents (id, path, title, hash, modified_at, indexed_at, markdown) VALUES (?, ?, ?, ?, ?, ?, ?)", doc.ID, doc.Path, doc.Title, doc.Hash, doc.ModifiedAt, doc.IndexedAt, doc.Markdown)
+	exec("INSERT INTO fts_documents (id, title, content, tags) VALUES (?, ?, ?, ?)", doc.ID, doc.Title, doc.Content, strings.Join(doc.Tags, " "))
 
 	// Persist document metadata
 	for k, v := range doc.Metadata {
 		switch val := v.(type) {
 		case string:
-			tx.ExecContext(ctx, "INSERT INTO metadata (document_id, key, value) VALUES (?, ?, ?)", doc.ID, k, val)
+			exec("INSERT INTO metadata (document_id, key, value) VALUES (?, ?, ?)", doc.ID, k, val)
 		case int, int64, float64, bool:
-			tx.ExecContext(ctx, "INSERT INTO metadata (document_id, key, value) VALUES (?, ?, ?)", doc.ID, k, fmt.Sprintf("%v", val))
+			exec("INSERT INTO metadata (document_id, key, value) VALUES (?, ?, ?)", doc.ID, k, fmt.Sprintf("%v", val))
 		}
 	}
 
 	// Persist document tags
 	for _, tag := range doc.Tags {
-		tx.ExecContext(ctx, "INSERT OR IGNORE INTO tags (id, name) VALUES (?, ?)", tag, tag)
-		tx.ExecContext(ctx, "INSERT OR IGNORE INTO document_tags (document_id, tag_id) VALUES (?, ?)", doc.ID, tag)
+		exec("INSERT OR IGNORE INTO tags (id, name) VALUES (?, ?)", tag, tag)
+		exec("INSERT OR IGNORE INTO document_tags (document_id, tag_id) VALUES (?, ?)", doc.ID, tag)
 	}
 
 	for _, link := range doc.Links {
-		tx.ExecContext(ctx, "INSERT INTO links (source_document_id, target_document_id) VALUES (?, ?)", link.SourceDocID, link.TargetDocID)
+		exec("INSERT INTO links (source_document_id, target_document_id) VALUES (?, ?)", link.SourceDocID, link.TargetDocID)
 	}
 
 	tags := strings.Join(doc.Tags, " ")
 	metadata := propertyValues(doc.EntityProperties)
 	for _, sec := range doc.Sections {
-		tx.ExecContext(ctx, "INSERT INTO sections (id, document_id, heading, level, content) VALUES (?, ?, ?, ?, ?)", sec.ID, doc.ID, sec.Heading, sec.Level, sec.Content)
+		exec("INSERT INTO sections (id, document_id, heading, level, content) VALUES (?, ?, ?, ?, ?)", sec.ID, doc.ID, sec.Heading, sec.Level, sec.Content)
 		if sec.Content != "" {
-			tx.ExecContext(ctx, "INSERT INTO fts_sections (section_id, document_id, title, heading, tags, content, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)", sec.ID, doc.ID, doc.Title, sec.Heading, tags, sec.Content, metadata)
+			exec("INSERT INTO fts_sections (section_id, document_id, title, heading, tags, content, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)", sec.ID, doc.ID, doc.Title, sec.Heading, tags, sec.Content, metadata)
 		}
 	}
 
 	// 4. Insert Entity data if IsEntity
 	if doc.IsEntity {
-		tx.ExecContext(ctx, "INSERT OR IGNORE INTO entity_types (id, name) VALUES ('unresolved', 'unresolved')")
-		tx.ExecContext(ctx, "INSERT OR IGNORE INTO entity_types (id, name) VALUES (?, ?)", doc.EntityType, doc.EntityType)
-		tx.ExecContext(ctx, "INSERT INTO entities (id, type_id, name, document_id) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET type_id = excluded.type_id, name = excluded.name, document_id = excluded.document_id", entID, doc.EntityType, doc.EntityName, doc.ID)
+		exec("INSERT OR IGNORE INTO entity_types (id, name) VALUES ('unresolved', 'unresolved')")
+		exec("INSERT OR IGNORE INTO entity_types (id, name) VALUES (?, ?)", doc.EntityType, doc.EntityType)
+		exec("INSERT INTO entities (id, type_id, name, document_id) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET type_id = excluded.type_id, name = excluded.name, document_id = excluded.document_id", entID, doc.EntityType, doc.EntityName, doc.ID)
 
 		for k, v := range doc.EntityProperties {
-			tx.ExecContext(ctx, "INSERT INTO entity_properties (entity_id, property_key, property_value) VALUES (?, ?, ?)", entID, k, v)
+			exec("INSERT INTO entity_properties (entity_id, property_key, property_value) VALUES (?, ?, ?)", entID, k, v)
 		}
 
 		seenRel := make(map[string]bool)
@@ -176,15 +178,44 @@ func (r *SQLiteRepository) UpsertDocument(ctx context.Context, doc *entities.Doc
 			seenRel[relKey] = true
 
 			// Ensure target entity stub exists to satisfy relational integrity
-			tx.ExecContext(ctx, "INSERT OR IGNORE INTO entities (id, type_id, name, document_id) VALUES (?, 'unresolved', ?, '')", rel.TargetID, rel.TargetID)
+			exec("INSERT OR IGNORE INTO entities (id, type_id, name, document_id) VALUES (?, 'unresolved', ?, '')", rel.TargetID, rel.TargetID)
 
-			tx.ExecContext(ctx, "INSERT INTO entity_relations (source_entity_id, target_entity_id, relation_type) VALUES (?, ?, ?)", rel.SourceID, rel.TargetID, rel.Type)
+			exec("INSERT INTO entity_relations (source_entity_id, target_entity_id, relation_type) VALUES (?, ?, ?)", rel.SourceID, rel.TargetID, rel.Type)
 		}
 	} else {
-		tx.ExecContext(ctx, "DELETE FROM entities WHERE id = ? OR document_id = ?", entID, doc.ID)
+		exec("DELETE FROM entities WHERE id = ? OR document_id = ?", entID, doc.ID)
 	}
 
+	if execErr != nil {
+		return execErr
+	}
 	return tx.Commit()
+}
+
+// txExec returns an executor that records the first failing statement in *errp and skips the
+// remaining ones, so the caller can roll back instead of committing a partial document.
+func txExec(ctx context.Context, tx *sql.Tx, errp *error) func(query string, args ...any) {
+	return func(query string, args ...any) {
+		if *errp != nil {
+			return
+		}
+		if _, err := tx.ExecContext(ctx, query, args...); err != nil {
+			*errp = fmt.Errorf("exec %q: %w", query, err)
+		}
+	}
+}
+
+// RekeyEmbeddings moves the section embeddings of a document from oldDocID to newDocID
+// (section IDs are "<docID>-<suffix>"), so a document whose ID scheme changed keeps its vectors.
+func (r *SQLiteRepository) RekeyEmbeddings(ctx context.Context, oldDocID, newDocID string) (int64, error) {
+	prefix := oldDocID + "-"
+	res, err := r.db.ExecContext(ctx,
+		"UPDATE OR IGNORE section_embeddings SET section_id = ? || substr(section_id, ?) WHERE substr(section_id, 1, ?) = ?",
+		newDocID, len(oldDocID)+1, len(prefix), prefix)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 // propertyValues joins frontmatter property values in key order for full-text indexing.
@@ -276,11 +307,13 @@ func (r *SQLiteRepository) DeleteOrphanEmbeddings(ctx context.Context) (int64, e
 }
 
 func (r *SQLiteRepository) RemoveDocument(ctx context.Context, path string) error {
+	var execErr error
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+	exec := txExec(ctx, tx, &execErr)
 
 	var docID, title string
 	if err := tx.QueryRowContext(ctx, "SELECT id, title FROM documents WHERE path = ?", path).Scan(&docID, &title); err != nil {
@@ -290,18 +323,21 @@ func (r *SQLiteRepository) RemoveDocument(ctx context.Context, path string) erro
 		return err
 	}
 
-	tx.ExecContext(ctx, "DELETE FROM section_embeddings WHERE section_id IN (SELECT id FROM sections WHERE document_id = ?)", docID)
-	tx.ExecContext(ctx, "DELETE FROM sections WHERE document_id = ?", docID)
-	tx.ExecContext(ctx, "DELETE FROM links WHERE source_document_id = ?", docID)
-	tx.ExecContext(ctx, "DELETE FROM document_tags WHERE document_id = ?", docID)
-	tx.ExecContext(ctx, "DELETE FROM metadata WHERE document_id = ?", docID)
-	tx.ExecContext(ctx, "DELETE FROM fts_documents WHERE id = ?", docID)
-	tx.ExecContext(ctx, "DELETE FROM fts_sections WHERE document_id = ?", docID)
-	tx.ExecContext(ctx, "DELETE FROM documents WHERE id = ?", docID)
+	exec("DELETE FROM section_embeddings WHERE section_id IN (SELECT id FROM sections WHERE document_id = ?)", docID)
+	exec("DELETE FROM sections WHERE document_id = ?", docID)
+	exec("DELETE FROM links WHERE source_document_id = ?", docID)
+	exec("DELETE FROM document_tags WHERE document_id = ?", docID)
+	exec("DELETE FROM metadata WHERE document_id = ?", docID)
+	exec("DELETE FROM fts_documents WHERE id = ?", docID)
+	exec("DELETE FROM fts_sections WHERE document_id = ?", docID)
+	exec("DELETE FROM documents WHERE id = ?", docID)
 	if title != "" {
-		tx.ExecContext(ctx, "DELETE FROM entity_properties WHERE entity_id = ?", title)
-		tx.ExecContext(ctx, "DELETE FROM entity_relations WHERE source_entity_id = ?", title)
-		tx.ExecContext(ctx, "DELETE FROM entities WHERE id = ?", title)
+		exec("DELETE FROM entity_properties WHERE entity_id = ?", title)
+		exec("DELETE FROM entity_relations WHERE source_entity_id = ?", title)
+		exec("DELETE FROM entities WHERE id = ?", title)
+	}
+	if execErr != nil {
+		return execErr
 	}
 	return tx.Commit()
 }
