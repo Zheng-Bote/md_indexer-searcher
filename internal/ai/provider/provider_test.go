@@ -7,9 +7,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -169,6 +172,11 @@ func TestOllamaProvider_GenerateStream(t *testing.T) {
 
 func TestOllamaProvider_ListModels(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/show" {
+			// Older Ollama without capabilities: classification falls back to name/family.
+			w.Write([]byte(`{}`))
+			return
+		}
 		if r.Method != http.MethodGet {
 			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
@@ -203,6 +211,78 @@ func TestOllamaProvider_ListModels(t *testing.T) {
 		if models[i] != want[i] {
 			t.Errorf("model %d: expected %+v, got %+v", i, want[i], models[i])
 		}
+	}
+}
+
+func TestOllamaProvider_ListModelsCapabilities(t *testing.T) {
+	var mu sync.Mutex
+	shown := map[string]int{}
+	digest := "d1"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/tags":
+			mu.Lock()
+			d := digest
+			mu.Unlock()
+			fmt.Fprintf(w, `{"models":[{"name":"qwen3:14b","digest":"a"},{"name":"bge-m3:latest","digest":"b","details":{"family":"bert"}},{"name":"snowflake-arctic:latest","digest":"%s","details":{"family":"xlm-roberta"}},{"name":"dual:latest","digest":"c"},{"name":"broken:latest","digest":"e","details":{"family":"nomic-bert"}},{"name":"gemma4:cloud"}]}`, d)
+		case "/api/ps":
+			w.Write([]byte(`{"models":[]}`))
+		case "/api/show":
+			var req struct{ Model string }
+			json.NewDecoder(r.Body).Decode(&req)
+			mu.Lock()
+			shown[req.Model]++
+			mu.Unlock()
+			caps := map[string]string{
+				"qwen3:14b":               `["completion","tools","thinking"]`,
+				"bge-m3:latest":           `["embedding"]`,
+				"snowflake-arctic:latest": `["embedding"]`,
+				"dual:latest":             `["completion","embedding"]`,
+			}[req.Model]
+			if caps == "" {
+				http.Error(w, "boom", http.StatusInternalServerError)
+				return
+			}
+			fmt.Fprintf(w, `{"capabilities":%s}`, caps)
+		}
+	}))
+	defer srv.Close()
+
+	p := NewOllamaProvider(srv.URL, nil)
+	kinds := func() map[string]string {
+		models, err := p.ListModels(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]string{}
+		for _, m := range models {
+			out[m.Name] = m.Kind
+		}
+		return out
+	}
+
+	want := map[string]string{
+		"qwen3:14b":               model.KindGeneration,
+		"bge-m3:latest":           model.KindEmbedding,
+		"snowflake-arctic:latest": model.KindEmbedding,
+		"dual:latest":             model.KindBoth,
+		"broken:latest":           model.KindEmbedding, // /api/show fails: family fallback
+		"gemma4:cloud":            model.KindGeneration,
+	}
+	if got := kinds(); !maps.Equal(got, want) {
+		t.Fatalf("kinds = %v, want %v", got, want)
+	}
+	if shown["gemma4:cloud"] != 0 {
+		t.Error(":cloud models must not be queried")
+	}
+
+	kinds()
+	mu.Lock()
+	digest = "d2"
+	mu.Unlock()
+	kinds()
+	if shown["qwen3:14b"] != 1 || shown["snowflake-arctic:latest"] != 2 || shown["broken:latest"] != 3 {
+		t.Errorf("expected cached lookups (once per name and digest, failures retried), got %v", shown)
 	}
 }
 

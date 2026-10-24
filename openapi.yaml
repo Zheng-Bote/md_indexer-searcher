@@ -363,7 +363,10 @@ components:
                     enum: [local, cloud]
                   kind:
                     type: string
-                    enum: [generation, embedding]
+                    enum: [generation, embedding, both]
+                    description: >
+                      From Ollama's reported capabilities (`/api/show`), falling back to name/family rules for
+                      older Ollama versions; `both` models can generate and embed.
                   parameter_size:
                     type: string
                     example: "14.8B"

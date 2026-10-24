@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Model kinds from Ollama capabilities (`#38`):** Local models are classified as generation or embedding model from the `capabilities` reported by Ollama's `/api/show` (cached per name and digest, max. 4 parallel lookups, 5 s timeout); older Ollama versions fall back to the name/family rules. Models with both capabilities get `kind: both` and are offered in both desktop selectors.
 - **Loaded models (`#37`):** `GET /api/ai/models` marks local models Ollama currently holds in memory (`loaded`, from `/api/ps`; ignored if that call fails). The desktop selectors show "geladen" next to them and reload the list in the background after each answer.
 - **Desktop model reload (`#36`):** "Modelle neu laden" reloads the model list without restarting the sidecars (e.g. after `ollama pull`).
 

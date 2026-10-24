@@ -212,6 +212,13 @@ describe('model options', () => {
     });
   });
 
+  it('offers models that can generate and embed in both selectors', () => {
+    const dual: ModelInfo = { name: 'dual:latest', size: 1, provider: 'ollama', locality: 'local', kind: 'both' };
+
+    expect(answerModelGroups([dual])[0].options.map((o) => o.ref.name)).toEqual(['dual:latest']);
+    expect(embeddingModels([dual]).map((m) => m.name)).toEqual(['dual:latest']);
+  });
+
   it('labels local models with size and loaded marker', () => {
     expect(modelLabel({ name: 'qwen3:14b', size: 1, parameter_size: '14.8B', loaded: true })).toBe(
       'qwen3:14b · 14.8B · geladen',
