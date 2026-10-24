@@ -26,5 +26,5 @@ SPDX-License-Identifier: Apache-2.0
 - [x] `openapi.yaml`, `README.md`, `CHANGELOG.md`.
 - [x] `go vet ./...`, `go test ./...`, `npm test`, `ng build`.
 - [x] Manual API check against local Ollama: kinds unchanged (`qwen3:32b`, `gemma3:12b`, `qwen3:14b` generation, `bge-m3` embedding); first listing 0.09 s, cached listing < 0.01 s.
-- [ ] GUI check (user).
+- [x] GUI check (user, confirmed 2026-10-24).
 - [x] Set spec status to Implemented.
