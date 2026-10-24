@@ -144,6 +144,7 @@ make ai       # md-ai (grounded AI assistant)
 # Desktop app (see "Desktop App" below)
 make desktop-dev   # build md-indexer + md-api as sidecars and start the app in dev mode
 make desktop       # build installable bundles
+make desktop-launcher  # install launcher + icon into ~/.local/share (Linux)
 
 # Run all tests
 make test
@@ -253,7 +254,10 @@ A Tauri v2 + Angular + Spartan-ng desktop client: pick a vault folder, choose th
 ```bash
 make desktop-dev   # build sidecars and start the app in dev mode
 make desktop       # build installable bundles
+make desktop-launcher  # Linux: install launcher + icon for the current user
 ```
+
+On Wayland (e.g. KDE) the window icon comes from a `.desktop` file matching the app_id `md-indexer-desktop`; installed bundles ship one, for dev runs `make desktop-launcher` installs `apps/desktop/src-tauri/md-indexer-desktop.desktop` and the icons into `~/.local/share` (the launcher starts the release binary from `make desktop`).
 
 Prerequisites: Go, Node.js, Rust and the [Tauri system dependencies](https://v2.tauri.app/start/prerequisites/) (on Debian/Ubuntu: `libwebkit2gtk-4.1-dev`, `build-essential`, `libssl-dev`, `libayatana-appindicator3-dev`, `librsvg2-dev`, `libxdo-dev`, `pkg-config`), plus a running Ollama instance. See `apps/desktop/README.md`.
 
