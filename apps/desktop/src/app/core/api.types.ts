@@ -22,7 +22,8 @@ export interface ModelInfo {
   provider?: string;
   provider_name?: string;
   locality?: Locality;
-  kind?: 'generation' | 'embedding';
+  /** 'both' models can generate and embed and are offered in both selectors. */
+  kind?: 'generation' | 'embedding' | 'both';
   parameter_size?: string;
   /** Local model currently held in memory by Ollama; answers without a cold start. */
   loaded?: boolean;

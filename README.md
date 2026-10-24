@@ -240,7 +240,7 @@ make api-run
 - `GET /api/impact/{name}`: Recursive impact analysis for an entity
 - `GET /api/graph/{name}`: Recursive dependency tree for an entity
 - `POST /api/ai/ask`: Grounded AI answer (requires `-ai`); optional `model: {provider, name}` selects the answering model, provider failures return `502` with `error_kind`
-- `GET /api/ai/models`: Local Ollama models (classified as generation/embedding and local/cloud, with parameter size) plus the configured cloud models, and the default generation/embedding model (requires `-ai`); local models currently loaded in memory carry `loaded: true`; if Ollama is unreachable, only the cloud models are returned together with `local_error`
+- `GET /api/ai/models`: Local Ollama models (classified as generation/embedding/both from Ollama's capabilities and as local/cloud, with parameter size) plus the configured cloud models, and the default generation/embedding model (requires `-ai`); local models currently loaded in memory carry `loaded: true`; if Ollama is unreachable, only the cloud models are returned together with `local_error`
 
 `md-api` listens on `127.0.0.1` by default and sends no CORS headers, so neither other machines nor web pages in your browser can read the vault through it. Use `-host 0.0.0.0` (or a specific interface address) only if you need network access: there is no authentication, and the server logs a warning. `md-indexer` accepts the same flag; its own HTTP server only answers `/health` (readiness after the initial index), queries go through `md-api`.
 

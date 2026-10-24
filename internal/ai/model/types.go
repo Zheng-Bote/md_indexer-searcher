@@ -136,6 +136,8 @@ const (
 const (
 	KindGeneration = "generation"
 	KindEmbedding  = "embedding"
+	// KindBoth marks models that can generate and embed; they are offered for both purposes.
+	KindBoth = "both"
 )
 
 // ModelInfo describes a model offered by an LLM backend.

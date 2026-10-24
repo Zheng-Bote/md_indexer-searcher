@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/md-indexer/internal/ai/model"
@@ -26,7 +27,17 @@ type OllamaProvider struct {
 	apiKey     string
 	// useChat selects /api/chat instead of /api/generate; Ollama Cloud documents only /api/chat.
 	useChat bool
+
+	// caps caches the capabilities reported by /api/show per "name@digest".
+	capsMu sync.Mutex
+	caps   map[string][]string
 }
+
+const (
+	// showConcurrency and showTimeout bound the /api/show calls of one model listing.
+	showConcurrency = 4
+	showTimeout     = 5 * time.Second
+)
 
 // OllamaOption configures an OllamaProvider.
 type OllamaOption func(*OllamaProvider)
@@ -169,6 +180,7 @@ type ollamaTagsResponse struct {
 	Models []struct {
 		Name    string `json:"name"`
 		Size    int64  `json:"size"`
+		Digest  string `json:"digest"`
 		Details struct {
 			Family        string   `json:"family"`
 			Families      []string `json:"families"`
@@ -201,18 +213,23 @@ func (p *OllamaProvider) ListModels(ctx context.Context) ([]model.ModelInfo, err
 		return nil, fmt.Errorf("failed to decode ollama tags response: %w", err)
 	}
 
+	caps := p.listCapabilities(ctx, tags)
 	// Loaded marks are informational; a failing /api/ps leaves them unset.
 	loaded, _ := p.loadedModels(ctx)
 	models := make([]model.ModelInfo, 0, len(tags.Models))
-	for _, m := range tags.Models {
+	for i, m := range tags.Models {
 		families := append([]string{m.Details.Family}, m.Details.Families...)
+		kind := kindOf(caps[i])
+		if kind == "" {
+			kind = ModelKind(m.Name, families)
+		}
 		models = append(models, model.ModelInfo{
 			Name:          m.Name,
 			Size:          m.Size,
 			Family:        m.Details.Family,
 			Provider:      p.name,
 			ProviderName:  "Ollama",
-			Kind:          ModelKind(m.Name, families),
+			Kind:          kind,
 			Locality:      p.locality(m.Name),
 			ParameterSize: m.Details.ParameterSize,
 		})
@@ -220,6 +237,93 @@ func (p *OllamaProvider) ListModels(ctx context.Context) ([]model.ModelInfo, err
 		info.Loaded = loaded[m.Name] && info.Locality == model.LocalityLocal
 	}
 	return models, nil
+}
+
+// listCapabilities returns the capabilities of each listed model (nil if unknown), querying
+// /api/show for uncached models with bounded concurrency. ":cloud" models are not queried.
+func (p *OllamaProvider) listCapabilities(ctx context.Context, tags ollamaTagsResponse) [][]string {
+	caps := make([][]string, len(tags.Models))
+	sem := make(chan struct{}, showConcurrency)
+	var wg sync.WaitGroup
+	for i, m := range tags.Models {
+		if IsOllamaCloudModel(m.Name) {
+			continue
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			caps[i] = p.capabilities(ctx, m.Name, m.Digest)
+		}()
+	}
+	wg.Wait()
+	return caps
+}
+
+// capabilities returns the cached or freshly reported capabilities of a model; nil if /api/show
+// fails or reports none (older Ollama). Only non-empty results are cached.
+func (p *OllamaProvider) capabilities(ctx context.Context, name, digest string) []string {
+	key := name + "@" + digest
+	p.capsMu.Lock()
+	cached, ok := p.caps[key]
+	p.capsMu.Unlock()
+	if ok {
+		return cached
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, showTimeout)
+	defer cancel()
+	body, _ := json.Marshal(map[string]string{"model": name})
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/api/show", bytes.NewReader(body))
+	if err != nil {
+		return nil
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	resp, err := p.httpClient.Do(httpReq)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil
+	}
+	var show struct {
+		Capabilities []string `json:"capabilities"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&show); err != nil || len(show.Capabilities) == 0 {
+		return nil
+	}
+
+	p.capsMu.Lock()
+	if p.caps == nil {
+		p.caps = make(map[string][]string)
+	}
+	p.caps[key] = show.Capabilities
+	p.capsMu.Unlock()
+	return show.Capabilities
+}
+
+// kindOf maps Ollama capabilities to a model kind; "" if they say neither.
+func kindOf(caps []string) string {
+	var embed, generate bool
+	for _, c := range caps {
+		switch c {
+		case "embedding":
+			embed = true
+		case "completion":
+			generate = true
+		}
+	}
+	switch {
+	case embed && generate:
+		return model.KindBoth
+	case embed:
+		return model.KindEmbedding
+	case generate:
+		return model.KindGeneration
+	}
+	return ""
 }
 
 // loadedModels returns the names of the models the daemon currently holds in memory (GET /api/ps).
