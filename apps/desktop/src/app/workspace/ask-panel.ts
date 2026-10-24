@@ -37,7 +37,11 @@ import { WorkspaceService } from './workspace.service';
         (keydown.control.enter)="submit($event)"
       ></textarea>
       <div class="flex items-center justify-between gap-2">
-        <span class="text-muted-foreground text-xs">Strg+Enter zum Senden</span>
+        @if (answerBlocked()) {
+          <span class="text-destructive text-xs">Kein Antwort-Modell verfügbar – bitte links ein Modell wählen.</span>
+        } @else {
+          <span class="text-muted-foreground text-xs">Strg+Enter zum Senden</span>
+        }
         <button hlmBtn type="submit" [disabled]="!canAsk()">
           @if (busy()) {
             <hlm-spinner aria-hidden="true" />
@@ -120,9 +124,14 @@ export class AskPanel {
   private opener: HTMLElement | null = null;
   private readonly elapsedMs = signal(0);
   protected readonly elapsedLabel = computed(() => formatDuration(this.elapsedMs()));
+  protected readonly answerBlocked = this.workspace.answerBlocked;
   private timer: ReturnType<typeof setInterval> | undefined;
   protected readonly canAsk = computed(
-    () => this.workspace.ready() && !this.busy() && this.question().trim().length > 0,
+    () =>
+      this.workspace.ready() &&
+      !this.workspace.answerBlocked() &&
+      !this.busy() &&
+      this.question().trim().length > 0,
   );
   /** Display name of the selected answer model's provider if that model runs in the cloud. */
   protected readonly cloudProvider = computed(() => {

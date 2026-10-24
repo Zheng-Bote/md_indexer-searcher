@@ -24,6 +24,7 @@ describe('AskPanel', () => {
   let el: HTMLElement;
   let answerModel: ReturnType<typeof signal<ModelRef | null>>;
   let consent: ReturnType<typeof signal<ReadonlySet<string>>>;
+  let answerBlocked: ReturnType<typeof signal<boolean>>;
   const models = signal<ModelInfo[]>([
     { name: 'qwen3:14b', size: 1, provider: 'ollama', locality: 'local', kind: 'generation' },
     {
@@ -40,6 +41,7 @@ describe('AskPanel', () => {
     ask = vi.fn();
     answerModel = signal<ModelRef | null>(null);
     consent = signal<ReadonlySet<string>>(new Set());
+    answerBlocked = signal(false);
     TestBed.configureTestingModule({
       providers: [
         {
@@ -59,6 +61,7 @@ describe('AskPanel', () => {
           provide: WorkspaceService,
           useValue: {
             ready: signal(true),
+            answerBlocked,
             models,
             settings: () => ({ ...EMPTY_SETTINGS, answerModel: answerModel() }),
             cloudConsent: consent,
@@ -177,6 +180,17 @@ describe('AskPanel', () => {
 
     expect(ask).toHaveBeenCalledWith('Frage', { provider: 'ollama', name: 'qwen3:14b' });
     expect(el.textContent).toContain('Lokal');
+  });
+
+  it('does not ask while no answer model is available', async () => {
+    answerBlocked.set(true);
+
+    await submit('Frage');
+    await settle();
+
+    expect(ask).not.toHaveBeenCalled();
+    expect(el.querySelector('button[type="submit"]')!.hasAttribute('disabled')).toBe(true);
+    expect(el.textContent).toContain('Kein Antwort-Modell verfügbar');
   });
 
   it('describes provider errors specifically', () => {

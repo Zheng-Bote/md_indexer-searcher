@@ -39,6 +39,9 @@ const NO_EMBEDDING = '';
             Cloud-Modell: Auszüge aus dem Vault werden an den Anbieter gesendet.
           </p>
         }
+        @if (workspace.answerNotice(); as notice) {
+          <p class="text-destructive text-xs" role="status">{{ notice }}</p>
+        }
       </div>
 
       <div class="flex flex-col gap-1.5">
@@ -63,6 +66,25 @@ const NO_EMBEDDING = '';
         <p class="text-muted-foreground text-xs">
           Ein neues Embedding-Modell berechnet fehlende Embeddings beim nächsten Indexlauf.
         </p>
+        @if (workspace.embeddingNotice(); as notice) {
+          <p class="text-destructive text-xs" role="status">{{ notice }}</p>
+        }
+      </div>
+
+      <div class="flex flex-col gap-1.5">
+        <button
+          hlmBtn
+          variant="outline"
+          size="sm"
+          type="button"
+          [disabled]="!workspace.ready() || workspace.refreshing()"
+          (click)="workspace.refreshModels()"
+        >
+          {{ workspace.refreshing() ? 'Modelle werden geladen…' : 'Modelle neu laden' }}
+        </button>
+        @if (workspace.localError(); as error) {
+          <p class="text-destructive text-xs" role="status">Ollama nicht erreichbar: {{ error }}</p>
+        }
       </div>
 
       <div class="flex flex-col gap-1.5">

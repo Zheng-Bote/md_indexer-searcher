@@ -51,12 +51,18 @@ func NewRegistry(local *OllamaProvider, cloud []config.ProviderConfig, timeout t
 	return r
 }
 
+// LocalModelsError reports that the local daemon could not list its models; the model list
+// returned with it still holds the configured cloud models.
+type LocalModelsError struct{ Err error }
+
+func (e *LocalModelsError) Error() string { return e.Err.Error() }
+
+func (e *LocalModelsError) Unwrap() error { return e.Err }
+
 // ListModels returns the local daemon's models followed by the configured cloud models.
+// If the local daemon fails, it still returns the cloud models together with a *LocalModelsError.
 func (r *Registry) ListModels(ctx context.Context) ([]model.ModelInfo, error) {
-	models, err := r.local.ListModels(ctx)
-	if err != nil {
-		return nil, err
-	}
+	models, localErr := r.local.ListModels(ctx)
 	for _, e := range r.cloud {
 		for _, name := range e.cfg.Models {
 			models = append(models, model.ModelInfo{
@@ -67,6 +73,9 @@ func (r *Registry) ListModels(ctx context.Context) ([]model.ModelInfo, error) {
 				Kind:         model.KindGeneration,
 			})
 		}
+	}
+	if localErr != nil {
+		return models, &LocalModelsError{Err: localErr}
 	}
 	return models, nil
 }

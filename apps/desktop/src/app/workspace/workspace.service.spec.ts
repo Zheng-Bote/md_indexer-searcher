@@ -101,6 +101,52 @@ describe('WorkspaceService', () => {
     expect(applied.length).toBe(1);
   });
 
+  it('reloads models on demand, resets a missing answer model and clears the notice on selection', async () => {
+    const workspace = setup({ vault: '/vault', answerModel: claude, embeddingModel: null, envFile: null });
+    await workspace.init();
+    status.set({ state: 'ready', vault: '/vault', apiBaseUrl: 'http://127.0.0.1:1', message: null, logTail: [] });
+    TestBed.tick();
+    await vi.waitFor(() => expect(workspace.models().length).toBe(1));
+
+    expect(saved.answerModel).toEqual({ provider: 'ollama', name: 'qwen3:14b' });
+    expect(workspace.answerNotice()).toContain('claude-opus-5-5');
+
+    listModels.mockResolvedValue({
+      models: [{ name: 'qwen3:14b', size: 1 }, { name: 'gemma3:12b', size: 1 }],
+      active: { model: 'qwen3:14b', embedding_model: '' },
+    });
+    await workspace.refreshModels();
+
+    expect(workspace.models().length).toBe(2);
+    expect(applied.length).toBe(1);
+
+    await workspace.selectAnswerModel({ provider: 'ollama', name: 'gemma3:12b' });
+    expect(workspace.answerNotice()).toBeNull();
+  });
+
+  it('keeps the previous list and reports the local error when Ollama is down', async () => {
+    const workspace = setup({ vault: '/vault', answerModel: null, embeddingModel: null, envFile: null });
+    await workspace.init();
+    status.set({ state: 'ready', vault: '/vault', apiBaseUrl: 'http://127.0.0.1:1', message: null, logTail: [] });
+    TestBed.tick();
+    await vi.waitFor(() => expect(workspace.models().length).toBe(1));
+
+    listModels.mockRejectedValueOnce(new Error('offline'));
+    await workspace.refreshModels();
+    expect(workspace.models().length).toBe(1);
+    expect(workspace.modelsError()).toBe('offline');
+
+    listModels.mockResolvedValue({
+      models: [{ name: 'claude-opus-5-5', size: 0, provider: 'claude', locality: 'cloud', kind: 'generation' }],
+      active: { model: 'qwen3:14b', embedding_model: '' },
+      local_error: 'connection refused',
+    });
+    await workspace.refreshModels();
+    expect(workspace.localError()).toBe('connection refused');
+    expect(workspace.modelsError()).toBeNull();
+    expect(saved.answerModel).toEqual({ provider: 'ollama', name: 'qwen3:14b' });
+  });
+
   it('keeps cloud consent per provider until the app closes', () => {
     const workspace = setup(EMPTY_SETTINGS);
 

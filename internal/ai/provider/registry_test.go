@@ -58,3 +58,22 @@ func TestRegistry_ListAndResolve(t *testing.T) {
 		}
 	}
 }
+
+func TestRegistry_ListModelsWithoutLocalDaemon(t *testing.T) {
+	down := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	downURL := down.URL
+	down.Close()
+
+	reg := NewRegistry(NewOllamaProvider(downURL, &http.Client{Timeout: time.Second}), []config.ProviderConfig{
+		{ID: config.ProviderClaude, DisplayName: "Claude", Protocol: config.ProtocolClaude, APIKey: "k", Models: []string{"claude-opus-5-5"}},
+	}, time.Minute, nil)
+
+	models, err := reg.ListModels(context.Background())
+	var localErr *LocalModelsError
+	if !errors.As(err, &localErr) || localErr.Error() == "" {
+		t.Fatalf("expected *LocalModelsError, got %v", err)
+	}
+	if len(models) != 1 || models[0].Name != "claude-opus-5-5" || models[0].Locality != model.LocalityCloud {
+		t.Fatalf("expected the cloud models, got %+v", models)
+	}
+}
