@@ -42,13 +42,17 @@ export const PROVIDER_NAMES: Record<string, string> = {
   gemini: 'Gemini',
 };
 
-/** Payload of GET /api/ai/models. An empty embedding_model means vectors are disabled. */
+/**
+ * Payload of GET /api/ai/models. An empty embedding_model means vectors are disabled; local_error is
+ * set when the local Ollama daemon could not be reached and `models` holds only the cloud models.
+ */
 export interface ModelsResponse {
   models: ModelInfo[];
   active: {
     model: string;
     embedding_model: string;
   };
+  local_error?: string;
 }
 
 export interface SourceCitation {

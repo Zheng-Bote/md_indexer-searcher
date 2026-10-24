@@ -252,6 +252,7 @@ paths:
         Lists the models installed in the configured Ollama instance (classified as generation or embedding
         model, local or cloud) followed by the models of the cloud providers enabled in md_indexer's `.env`,
         together with the default generation and embedding models md-api is running with.
+        If the Ollama instance is not reachable, the cloud models are still listed and `local_error` is set.
       responses:
         '200':
           description: Installed models and active configuration
@@ -266,7 +267,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '502':
-          description: Ollama is not reachable
+          description: The model list could not be loaded
           content:
             application/json:
               schema:
@@ -375,6 +376,12 @@ components:
                 embedding_model:
                   type: string
                   example: "bge-m3"
+            local_error:
+              type: string
+              description: >
+                Set when the local Ollama daemon could not list its models; `models` then holds only the
+                cloud models enabled in `.env`.
+              example: "failed to call ollama at http://localhost:11434/api/tags: connection refused"
 
     AIAnswerResponse:
       type: object

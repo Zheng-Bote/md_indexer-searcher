@@ -172,6 +172,11 @@ func (s *Server) Handler() http.Handler {
 			return
 		}
 		models, err := s.modelLister.ListModels(r.Context())
+		var localErr *provider.LocalModelsError
+		if errors.As(err, &localErr) {
+			respondJSON(w, map[string]interface{}{"models": models, "active": s.activeModels, "local_error": localErr.Error()}, nil)
+			return
+		}
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadGateway)

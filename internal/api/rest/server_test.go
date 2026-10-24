@@ -211,14 +211,22 @@ func TestRESTServer_AIModels(t *testing.T) {
 	mock := provider.NewMockProvider("")
 	mock.Models = []model.ModelInfo{{Name: "qwen3:14b", Size: 1, Family: "qwen3"}}
 
+	unreachableOllama := provider.NewOllamaProvider(unreachableURL, &http.Client{Timeout: time.Second})
+	registry := provider.NewRegistry(unreachableOllama, []config.ProviderConfig{
+		{ID: config.ProviderClaude, DisplayName: "Claude", Protocol: config.ProtocolClaude, APIKey: "k", Models: []string{"claude-opus-5-5"}},
+	}, time.Minute, nil)
+
 	tests := []struct {
-		name       string
-		server     *Server
-		wantStatus int
+		name           string
+		server         *Server
+		wantStatus     int
+		wantModel      string
+		wantLocalError bool
 	}{
-		{"AI disabled", NewServer(se), http.StatusNotImplemented},
-		{"Ollama unreachable", NewServer(se).WithModelLister(provider.NewOllamaProvider(unreachableURL, &http.Client{Timeout: time.Second}), active), http.StatusBadGateway},
-		{"Models listed", NewServer(se).WithModelLister(mock, active), http.StatusOK},
+		{"AI disabled", NewServer(se), http.StatusNotImplemented, "", false},
+		{"Ollama unreachable", NewServer(se).WithModelLister(unreachableOllama, active), http.StatusBadGateway, "", false},
+		{"Models listed", NewServer(se).WithModelLister(mock, active), http.StatusOK, "qwen3:14b", false},
+		{"Cloud models without Ollama", NewServer(se).WithModelLister(registry, active), http.StatusOK, "claude-opus-5-5", true},
 	}
 
 	for _, tt := range tests {
@@ -234,18 +242,22 @@ func TestRESTServer_AIModels(t *testing.T) {
 			var body struct {
 				Success bool `json:"success"`
 				Data    struct {
-					Models []model.ModelInfo `json:"models"`
-					Active ActiveModels      `json:"active"`
+					Models     []model.ModelInfo `json:"models"`
+					Active     ActiveModels      `json:"active"`
+					LocalError string            `json:"local_error"`
 				} `json:"data"`
 			}
 			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 				t.Fatalf("invalid JSON: %v", err)
 			}
-			if !body.Success || len(body.Data.Models) != 1 || body.Data.Models[0].Name != "qwen3:14b" {
+			if !body.Success || len(body.Data.Models) != 1 || body.Data.Models[0].Name != tt.wantModel {
 				t.Errorf("unexpected models payload: %s", rec.Body.String())
 			}
 			if body.Data.Active != active {
 				t.Errorf("expected active %+v, got %+v", active, body.Data.Active)
+			}
+			if (body.Data.LocalError != "") != tt.wantLocalError {
+				t.Errorf("expected local_error set=%v, got %q", tt.wantLocalError, body.Data.LocalError)
 			}
 		})
 	}
