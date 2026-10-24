@@ -1,0 +1,14 @@
+# SPDX-FileCopyrightText: 2026 Zheng-Bote
+# SPDX-License-Identifier: Apache-2.0
+#
+# The file name must match the window's app_id (the binary name), so that Wayland compositors
+# such as KWin find the icon. `make desktop-launcher` installs it into ~/.local/share.
+[Desktop Entry]
+Type=Application
+Name=md-indexer
+Comment=Search and ask your Markdown vault
+Exec=md-indexer-desktop
+Icon=md-indexer-desktop
+Terminal=false
+Categories=Office;
+StartupWMClass=md-indexer-desktop

@@ -31,3 +31,20 @@ desktop-dev: desktop-sidecars
 
 desktop: desktop-sidecars
 	npm --prefix $(DESKTOP_DIR) run tauri build
+
+# Installs the launcher and icons for the current user, so Wayland compositors show the app icon
+# (also for `desktop-dev`); Exec points to the release binary built by `make desktop`.
+XDG_DATA_HOME ?= $(HOME)/.local/share
+DESKTOP_ICONS := $(DESKTOP_DIR)/src-tauri/icons
+
+desktop-launcher:
+	install -Dm644 $(DESKTOP_ICONS)/32x32.png $(XDG_DATA_HOME)/icons/hicolor/32x32/apps/md-indexer-desktop.png
+	install -Dm644 $(DESKTOP_ICONS)/128x128.png $(XDG_DATA_HOME)/icons/hicolor/128x128/apps/md-indexer-desktop.png
+	install -Dm644 $(DESKTOP_ICONS)/128x128@2x.png $(XDG_DATA_HOME)/icons/hicolor/256x256/apps/md-indexer-desktop.png
+	install -Dm644 $(DESKTOP_ICONS)/icon.png $(XDG_DATA_HOME)/icons/hicolor/512x512/apps/md-indexer-desktop.png
+	install -Dm644 $(DESKTOP_ICONS)/app-icon.svg $(XDG_DATA_HOME)/icons/hicolor/scalable/apps/md-indexer-desktop.svg
+	mkdir -p $(XDG_DATA_HOME)/applications
+	sed 's|^Exec=.*|Exec=$(CURDIR)/$(DESKTOP_DIR)/src-tauri/target/release/md-indexer-desktop|' \
+		$(DESKTOP_DIR)/src-tauri/md-indexer-desktop.desktop > $(XDG_DATA_HOME)/applications/md-indexer-desktop.desktop
+	-update-desktop-database $(XDG_DATA_HOME)/applications
+	-kbuildsycoca6 --noincremental 2>/dev/null
