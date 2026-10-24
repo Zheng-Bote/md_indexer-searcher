@@ -35,5 +35,5 @@ SPDX-License-Identifier: Apache-2.0
 - [x] `README.md`, `CHANGELOG.md`.
 - [x] `go vet ./...`, `go test ./...`, `npm test`, `ng build`, `cargo test`.
 - [x] Manual API check: `md-api` with a real and an unreachable `-ollama-host` → 200; without Ollama only cloud models plus `local_error`.
-- [ ] Manual GUI check of scenarios 1–5 (user).
+- [x] Manual GUI check of scenarios 1–5 (user, 2026-10-24).
 - [x] Set spec status to Implemented.
