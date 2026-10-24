@@ -169,8 +169,12 @@ func TestOllamaProvider_GenerateStream(t *testing.T) {
 
 func TestOllamaProvider_ListModels(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || r.URL.Path != "/api/tags" {
+		if r.Method != http.MethodGet {
 			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		if r.URL.Path == "/api/ps" {
+			w.Write([]byte(`{"models":[{"name":"qwen3:14b"},{"name":"gemma4:cloud"}]}`))
+			return
 		}
 		w.Write([]byte(`{"models":[{"name":"qwen3:14b","size":9300000000,"details":{"family":"qwen3","parameter_size":"14.8B"}},{"name":"bge-m3:latest","size":1200000000,"details":{"family":"bert","families":["bert"],"parameter_size":"566.70M"}},{"name":"gemma4:cloud","size":0,"details":{"family":"gemma4"}},{"name":"gpt-oss:120b-cloud","size":0,"details":{"family":"gptoss"}}]}`))
 	}))
@@ -187,7 +191,7 @@ func TestOllamaProvider_ListModels(t *testing.T) {
 		return m
 	}
 	want := []model.ModelInfo{
-		with(model.ModelInfo{Name: "qwen3:14b", Size: 9300000000, Family: "qwen3", Kind: model.KindGeneration, Locality: model.LocalityLocal, ParameterSize: "14.8B"}),
+		with(model.ModelInfo{Name: "qwen3:14b", Size: 9300000000, Family: "qwen3", Kind: model.KindGeneration, Locality: model.LocalityLocal, ParameterSize: "14.8B", Loaded: true}),
 		with(model.ModelInfo{Name: "bge-m3:latest", Size: 1200000000, Family: "bert", Kind: model.KindEmbedding, Locality: model.LocalityLocal, ParameterSize: "566.70M"}),
 		with(model.ModelInfo{Name: "gemma4:cloud", Family: "gemma4", Kind: model.KindGeneration, Locality: model.LocalityCloud}),
 		with(model.ModelInfo{Name: "gpt-oss:120b-cloud", Family: "gptoss", Kind: model.KindGeneration, Locality: model.LocalityCloud}),
@@ -199,6 +203,22 @@ func TestOllamaProvider_ListModels(t *testing.T) {
 		if models[i] != want[i] {
 			t.Errorf("model %d: expected %+v, got %+v", i, want[i], models[i])
 		}
+	}
+}
+
+func TestOllamaProvider_ListModelsWithoutLoadedInfo(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/ps" {
+			http.Error(w, "boom", http.StatusInternalServerError)
+			return
+		}
+		w.Write([]byte(`{"models":[{"name":"qwen3:14b","details":{"family":"qwen3"}}]}`))
+	}))
+	defer srv.Close()
+
+	models, err := NewOllamaProvider(srv.URL, nil).ListModels(context.Background())
+	if err != nil || len(models) != 1 || models[0].Loaded {
+		t.Fatalf("expected one unmarked model without error, got %+v, %v", models, err)
 	}
 }
 

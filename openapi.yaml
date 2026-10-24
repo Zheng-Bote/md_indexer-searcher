@@ -367,6 +367,10 @@ components:
                   parameter_size:
                     type: string
                     example: "14.8B"
+                  loaded:
+                    type: boolean
+                    description: Local model currently held in memory by Ollama (`/api/ps`); omitted when false.
+                    example: true
             active:
               type: object
               properties:

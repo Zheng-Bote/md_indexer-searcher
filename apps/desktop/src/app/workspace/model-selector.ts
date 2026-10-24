@@ -6,7 +6,13 @@ import { HlmButtonImports } from '@spartan-ng/helm/button';
 import { HlmSelectImports } from '@spartan-ng/helm/select';
 import { toast } from '@spartan-ng/brain/sonner';
 import { open } from '@tauri-apps/plugin-dialog';
-import { answerModelGroups, embeddingModels, modelKey, parseModelKey } from './model-options';
+import {
+  answerModelGroups,
+  embeddingModels,
+  modelKey,
+  modelLabel,
+  parseModelKey,
+} from './model-options';
 import { WorkspaceService } from './workspace.service';
 
 /** Select value standing for "no embedding model" (vector retrieval disabled). */
@@ -58,7 +64,7 @@ const NO_EMBEDDING = '';
             <hlm-select-group>
               <hlm-select-item [value]="noEmbedding">Keins (nur Volltext &amp; Graph)</hlm-select-item>
               @for (m of embeddingOptions(); track m.name) {
-                <hlm-select-item [value]="m.name">{{ m.name }}</hlm-select-item>
+                <hlm-select-item [value]="m.name">{{ label(m) }}</hlm-select-item>
               }
             </hlm-select-group>
           </hlm-select-content>
@@ -113,6 +119,7 @@ const NO_EMBEDDING = '';
 export class ModelSelector {
   protected readonly workspace = inject(WorkspaceService);
   protected readonly noEmbedding = NO_EMBEDDING;
+  protected readonly label = modelLabel;
 
   protected readonly answerGroups = computed(() => answerModelGroups(this.workspace.models()));
   protected readonly embeddingOptions = computed(() => embeddingModels(this.workspace.models()));

@@ -36,6 +36,11 @@ export function parameterCount(size: string | undefined): number {
   return parseFloat(match[1]) * factor;
 }
 
+/** Label of a local model: name, parameter size and whether it is loaded in memory. */
+export function modelLabel(m: ModelInfo): string {
+  return [m.name, m.parameter_size, m.loaded ? 'geladen' : undefined].filter(Boolean).join(' · ');
+}
+
 function providerOf(m: ModelInfo): string {
   return m.provider ?? 'ollama';
 }
@@ -57,8 +62,7 @@ export function answerModelGroups(models: ModelInfo[]): ModelGroup[] {
       cloud: false,
       options: local.map((m) => {
         const ref = { provider: providerOf(m), name: m.name };
-        const label = m.parameter_size ? `${m.name} · ${m.parameter_size}` : m.name;
-        return { key: modelKey(ref), label, ref };
+        return { key: modelKey(ref), label: modelLabel(m), ref };
       }),
     });
   }

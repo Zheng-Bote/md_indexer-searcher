@@ -148,6 +148,8 @@ type ModelInfo struct {
 	Locality      string `json:"locality,omitempty"`
 	Kind          string `json:"kind,omitempty"`
 	ParameterSize string `json:"parameter_size,omitempty"`
+	// Loaded reports that a local model is currently held in memory by the daemon.
+	Loaded bool `json:"loaded,omitempty"`
 }
 
 // ModelRef selects a model of a provider for one request.
