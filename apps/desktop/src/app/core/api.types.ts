@@ -24,6 +24,8 @@ export interface ModelInfo {
   locality?: Locality;
   kind?: 'generation' | 'embedding';
   parameter_size?: string;
+  /** Local model currently held in memory by Ollama; answers without a cold start. */
+  loaded?: boolean;
 }
 
 /** Selects the model that answers a question. */

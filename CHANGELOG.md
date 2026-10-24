@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Loaded models (`#37`):** `GET /api/ai/models` marks local models Ollama currently holds in memory (`loaded`, from `/api/ps`; ignored if that call fails). The desktop selectors show "geladen" next to them and reload the list in the background after each answer.
 - **Desktop model reload (`#36`):** "Modelle neu laden" reloads the model list without restarting the sidecars (e.g. after `ollama pull`).
 
 ### Changed

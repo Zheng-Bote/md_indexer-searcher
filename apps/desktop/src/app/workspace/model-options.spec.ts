@@ -8,6 +8,7 @@ import {
   checkSelection,
   embeddingModels,
   modelKey,
+  modelLabel,
   parameterCount,
   parseModelKey,
   providerLabel,
@@ -209,6 +210,14 @@ describe('model options', () => {
 
       expect(check.answerModel).toEqual({ provider: 'ollama', name: 'gemma3:12b' });
     });
+  });
+
+  it('labels local models with size and loaded marker', () => {
+    expect(modelLabel({ name: 'qwen3:14b', size: 1, parameter_size: '14.8B', loaded: true })).toBe(
+      'qwen3:14b · 14.8B · geladen',
+    );
+    expect(modelLabel({ name: 'bge-m3:latest', size: 1, loaded: true })).toBe('bge-m3:latest · geladen');
+    expect(modelLabel({ name: 'gemma3:12b', size: 1 })).toBe('gemma3:12b');
   });
 
   it('matches Ollama names with an implicit latest tag', () => {

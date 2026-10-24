@@ -25,6 +25,7 @@ describe('AskPanel', () => {
   let answerModel: ReturnType<typeof signal<ModelRef | null>>;
   let consent: ReturnType<typeof signal<ReadonlySet<string>>>;
   let answerBlocked: ReturnType<typeof signal<boolean>>;
+  let refreshModels: ReturnType<typeof vi.fn>;
   const models = signal<ModelInfo[]>([
     { name: 'qwen3:14b', size: 1, provider: 'ollama', locality: 'local', kind: 'generation' },
     {
@@ -42,6 +43,7 @@ describe('AskPanel', () => {
     answerModel = signal<ModelRef | null>(null);
     consent = signal<ReadonlySet<string>>(new Set());
     answerBlocked = signal(false);
+    refreshModels = vi.fn().mockResolvedValue(undefined);
     TestBed.configureTestingModule({
       providers: [
         {
@@ -62,6 +64,7 @@ describe('AskPanel', () => {
           useValue: {
             ready: signal(true),
             answerBlocked,
+            refreshModels,
             models,
             settings: () => ({ ...EMPTY_SETTINGS, answerModel: answerModel() }),
             cloudConsent: consent,
@@ -180,6 +183,7 @@ describe('AskPanel', () => {
 
     expect(ask).toHaveBeenCalledWith('Frage', { provider: 'ollama', name: 'qwen3:14b' });
     expect(el.textContent).toContain('Lokal');
+    expect(refreshModels).toHaveBeenCalledTimes(1);
   });
 
   it('does not ask while no answer model is available', async () => {

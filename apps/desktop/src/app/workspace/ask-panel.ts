@@ -204,6 +204,8 @@ export class AskPanel {
       );
       this.durationMs.set(performance.now() - startedAt);
       this.answer.set(answer);
+      // The answering model is now loaded; update the selector's "geladen" marks.
+      void this.workspace.refreshModels();
     } catch (err) {
       this.error.set(
         `${describeError(err)} (nach ${formatDuration(performance.now() - startedAt)} min)`,

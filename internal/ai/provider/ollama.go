@@ -201,6 +201,8 @@ func (p *OllamaProvider) ListModels(ctx context.Context) ([]model.ModelInfo, err
 		return nil, fmt.Errorf("failed to decode ollama tags response: %w", err)
 	}
 
+	// Loaded marks are informational; a failing /api/ps leaves them unset.
+	loaded, _ := p.loadedModels(ctx)
 	models := make([]model.ModelInfo, 0, len(tags.Models))
 	for _, m := range tags.Models {
 		families := append([]string{m.Details.Family}, m.Details.Families...)
@@ -214,8 +216,39 @@ func (p *OllamaProvider) ListModels(ctx context.Context) ([]model.ModelInfo, err
 			Locality:      p.locality(m.Name),
 			ParameterSize: m.Details.ParameterSize,
 		})
+		info := &models[len(models)-1]
+		info.Loaded = loaded[m.Name] && info.Locality == model.LocalityLocal
 	}
 	return models, nil
+}
+
+// loadedModels returns the names of the models the daemon currently holds in memory (GET /api/ps).
+func (p *OllamaProvider) loadedModels(ctx context.Context) (map[string]bool, error) {
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, p.baseURL+"/api/ps", nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := p.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("ollama returned status %d", resp.StatusCode)
+	}
+	var ps struct {
+		Models []struct {
+			Name string `json:"name"`
+		} `json:"models"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&ps); err != nil {
+		return nil, err
+	}
+	loaded := make(map[string]bool, len(ps.Models))
+	for _, m := range ps.Models {
+		loaded[m.Name] = true
+	}
+	return loaded, nil
 }
 
 func (r ollamaGenerateResponse) text() string {
