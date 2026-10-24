@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [v0.5.0] - 2026-10-24
 
 ### Added
 - **Desktop launcher (Linux):** `apps/desktop/src-tauri/md-indexer-desktop.desktop` and `make desktop-launcher`, which installs it with the icons into `~/.local/share`, so Wayland compositors (e.g. KWin) show the app icon for dev runs too.
@@ -14,10 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Desktop model reload (`#36`):** "Modelle neu laden" reloads the model list without restarting the sidecars (e.g. after `ollama pull`).
 
 ### Changed
-- **Desktop icon rebuild:** `build.rs` reruns when `icons/` changes, so a new icon is embedded without a clean build.
 - **Desktop app icon:** New icon (Markdown page with a magnifier over a knowledge graph) replaces the Tauri default; source `apps/desktop/src-tauri/icons/app-icon.svg`, platform icons and `favicon.ico` generated with `npx tauri icon`.
 - **Model discovery without Ollama (`#36`):** `GET /api/ai/models` returns the cloud models with `local_error` (HTTP 200) when the local Ollama daemon is unreachable, instead of failing with 502; the desktop app shows "Ollama nicht erreichbar" and keeps the cloud models selectable.
 - **Missing saved models (`#36`):** The desktop app checks the saved models whenever the list is loaded. A missing answer model is replaced by md-api's default local model (never a cloud model) with a persistent notice; if that is missing too, asking is disabled until a model is selected. A missing embedding model is only reported (`ollama pull …`), never changed automatically. Ollama names match with an implicit `:latest` tag.
+
+### Fixed
+- **Desktop icon in dev builds:** `build.rs` reruns when `icons/` changes, so a new icon is embedded without a clean build.
 
 ## [v0.4.0] - 2026-10-18
 

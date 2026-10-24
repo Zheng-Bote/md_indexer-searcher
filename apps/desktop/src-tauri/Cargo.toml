@@ -3,7 +3,7 @@
 
 [package]
 name = "md-indexer-desktop"
-version = "0.4.0"
+version = "0.5.0"
 description = "Desktop client for md-indexer: vault selection, model selection and grounded Q&A"
 authors = ["Zheng-Bote"]
 license = "Apache-2.0"
