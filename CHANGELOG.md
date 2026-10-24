@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Desktop model reload (`#36`):** "Modelle neu laden" reloads the model list without restarting the sidecars (e.g. after `ollama pull`).
 
 ### Changed
+- **Desktop app icon:** New icon (Markdown page with a magnifier over a knowledge graph) replaces the Tauri default; source `apps/desktop/src-tauri/icons/app-icon.svg`, platform icons and `favicon.ico` generated with `npx tauri icon`.
 - **Model discovery without Ollama (`#36`):** `GET /api/ai/models` returns the cloud models with `local_error` (HTTP 200) when the local Ollama daemon is unreachable, instead of failing with 502; the desktop app shows "Ollama nicht erreichbar" and keeps the cloud models selectable.
 - **Missing saved models (`#36`):** The desktop app checks the saved models whenever the list is loaded. A missing answer model is replaced by md-api's default local model (never a cloud model) with a persistent notice; if that is missing too, asking is disabled until a model is selected. A missing embedding model is only reported (`ollama pull …`), never changed automatically. Ollama names match with an implicit `:latest` tag.
 
