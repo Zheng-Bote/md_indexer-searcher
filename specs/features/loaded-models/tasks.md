@@ -27,5 +27,5 @@ SPDX-License-Identifier: Apache-2.0
 - [x] `openapi.yaml`, `README.md`, `CHANGELOG.md`.
 - [x] `go vet ./...`, `go test ./...`, `npm test`, `ng build`.
 - [x] Manual API check: warm `bge-m3` → only `bge-m3:latest` has `loaded: true`.
-- [ ] GUI check of scenarios 1–3 (user).
+- [x] GUI check of scenarios 1–3 (user, 2026-10-24).
 - [x] Set spec status to Implemented.
